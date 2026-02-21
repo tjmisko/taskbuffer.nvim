@@ -2,6 +2,33 @@ local M = {}
 
 local keymaps_registered = false
 
+local function get_config()
+    return require("taskbuffer").config
+end
+
+--- Look up a keymap binding from config; returns nil if set to false.
+local function binding(context, action)
+    local cfg = get_config()
+    local group = cfg.keymaps[context]
+    if not group then
+        return nil
+    end
+    local key = group[action]
+    if key == false then
+        return nil
+    end
+    return key
+end
+
+--- Set a keymap only if the binding is not disabled.
+local function map(mode, context, action, rhs, opts)
+    local lhs = binding(context, action)
+    if not lhs then
+        return
+    end
+    vim.keymap.set(mode, lhs, rhs, opts or {})
+end
+
 local function parse_taskfile_line(line)
     local filepath = string.sub(line, 1, string.find(line, ":") - 1)
     local second_colon = string.find(line, ":", string.find(line, ":") + 1)
@@ -90,17 +117,41 @@ local function set_quickfix_task_list()
     vim.cmd("copen")
 end
 
-local function task_complete()
-    local line_text = vim.api.nvim_get_current_line()
-    if not string.find(line_text, "- %[ %]", 1) then
-        print("No Task to Complete!")
-        return
+--- Run a Go binary command and optionally refresh the taskfile buffer.
+local function run_task_cmd(args, refresh)
+    local config = get_config()
+    local cmd = { config.task_bin }
+    for _, a in ipairs(args) do
+        table.insert(cmd, a)
     end
-    line_text = string.gsub(line_text, "- %[ %]", "- %[x%]", 1)
-    local cursor_pos = vim.api.nvim_win_get_cursor(0)
-    local line_number = cursor_pos[1]
-    local completed_marker = "::complete [[" .. os.date("%Y-%m-%d") .. "]] " .. os.date("%H:%M")
-    vim.api.nvim_buf_set_lines(0, line_number - 1, line_number, true, { line_text .. completed_marker })
+    local result = vim.system(cmd, { text = true }):wait()
+    if result.code ~= 0 then
+        vim.notify("task command failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
+        return false
+    end
+    if refresh then
+        local buffer = require("taskbuffer.buffer")
+        local cursor = vim.api.nvim_win_get_cursor(0)
+        buffer.set_refreshing(true)
+        buffer.refresh_taskfile()
+        vim.cmd("edit!")
+        vim.bo.readonly = true
+        buffer.set_refreshing(false)
+        pcall(vim.api.nvim_win_set_cursor, 0, cursor)
+    end
+    return true
+end
+
+--- Get filepath and linenumber from a taskfile line or current markdown buffer.
+local function get_task_location_from_taskfile()
+    local line = vim.fn.getline(".")
+    return parse_taskfile_line(line)
+end
+
+local function get_task_location_from_current_buffer()
+    local filepath = vim.api.nvim_buf_get_name(0)
+    local linenumber = vim.api.nvim_win_get_cursor(0)[1]
+    return filepath, linenumber
 end
 
 local function shift_task_date_in_taskfile(days)
@@ -159,50 +210,51 @@ function M.setup_keymaps()
 
     local augroup = vim.api.nvim_create_augroup("TaskBufferKeymaps", { clear = true })
 
-    -- Global keymaps (not buffer-local)
-    vim.keymap.set("n", "<leader>ev", 'o<Tab>- [[<Esc>ma:pu=strftime(\'%F\')<CR>"aDdd`a"apa]]: ')
-    vim.keymap.set("n", "<leader>tc", task_complete)
-    vim.keymap.set("n", "<leader>td", function()
-        local line = vim.fn.getline(".")
-        if not string.find(line, "::original") then
-            vim.cmd('normal mf_"ayi(_$a::original ', false)
-            vim.cmd('normal "apF@x`f')
-        end
-        vim.cmd("normal $a ::deferral [[")
-        vim.cmd("pu=strftime('%F')")
-        vim.cmd("normal $a]]")
-        vim.cmd("pu=strftime('%R')")
-        vim.cmd("normal 2kJxJ_f@6e")
-    end)
-    vim.keymap.set("n", "<leader>tx", function()
-        local line_text = vim.api.nvim_get_current_line()
-        if not string.find(line_text, "- %[ %]", 1) then
-            print("No Task to Complete!")
-            return
-        end
-        line_text = string.gsub(line_text, "- %[ %]", "- %[x%]", 1)
-        local cursor_pos = vim.api.nvim_win_get_cursor(0)
-        local line_number = cursor_pos[1]
-        vim.api.nvim_buf_set_lines(0, line_number - 1, line_number, true, { line_text })
+    -- Global keymaps
+    map("n", "global", "note", 'o<Tab>- [[<Esc>ma:pu=strftime(\'%F\')<CR>"aDdd`a"apa]]: ')
+
+    map("n", "global", "complete", function()
+        local filepath, linenumber = get_task_location_from_current_buffer()
+        run_task_cmd({ "complete-at", filepath, tostring(linenumber) }, false)
+        -- Re-read the line since the Go binary modified the file
+        vim.cmd("edit!")
     end)
 
-    vim.keymap.set(
-        "n",
-        "<leader>ti",
-        'mf_f[lr-A::irrelevant [[<Esc>ma:pu=strftime(\'%F\')<CR>"aDdd`a"apa]] <Esc>ma:pu=strftime(\'%R\')<CR>"aDdd`a"ap`f'
-    )
-    vim.keymap.set("n", "<leader>tu", "mf_f[lr `fh")
-    vim.keymap.set({ "n", "v" }, "<M-C-q>", set_quickfix_task_list)
+    map("n", "global", "defer", function()
+        local filepath, linenumber = get_task_location_from_current_buffer()
+        run_task_cmd({ "defer", filepath, tostring(linenumber) }, false)
+        vim.cmd("edit!")
+    end)
+
+    map("n", "global", "check_off", function()
+        local filepath, linenumber = get_task_location_from_current_buffer()
+        run_task_cmd({ "check", filepath, tostring(linenumber) }, false)
+        vim.cmd("edit!")
+    end)
+
+    map("n", "global", "irrelevant", function()
+        local filepath, linenumber = get_task_location_from_current_buffer()
+        run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, false)
+        vim.cmd("edit!")
+    end)
+
+    map("n", "global", "undo_irrelevant", function()
+        local filepath, linenumber = get_task_location_from_current_buffer()
+        run_task_cmd({ "unset", filepath, tostring(linenumber) }, false)
+        vim.cmd("edit!")
+    end)
+
+    map({ "n", "v" }, "global", "quickfix", set_quickfix_task_list)
 
     -- Taskfile-specific keymaps
     vim.api.nvim_create_autocmd("FileType", {
         group = augroup,
         pattern = { "taskfile" },
         callback = function()
-            local config = require("taskbuffer").config
+            local config = get_config()
             local state_path = config.state_dir .. "/current_task"
 
-            vim.keymap.set("n", "<leader>tb", function()
+            map("n", "taskfile", "start_task", function()
                 local f = io.open(state_path, "r")
                 if f then
                     f:close()
@@ -231,8 +283,8 @@ function M.setup_keymaps()
                 append_to_line(filepath, tonumber(linenumber), start_suffix)
             end, { buffer = true, desc = "Start task" })
 
-            vim.keymap.set("n", "gf", function()
-                vim.cmd('normal _3f|w')
+            map("n", "taskfile", "go_to_file", function()
+                vim.cmd("normal _3f|w")
                 vim.cmd('normal! "gy3E')
                 local line = vim.fn.getline(".")
                 local filepath = string.sub(line, 1, string.find(line, ":") - 1)
@@ -246,24 +298,56 @@ function M.setup_keymaps()
                 vim.cmd("normal zz")
             end, { buffer = true, desc = "Go to task source" })
 
-            vim.keymap.set(
-                "n",
-                "<leader>ti",
-                'mf_f[lr-A::irrelevant [[<Esc>ma:pu=strftime(\'%F\')<CR>"aDdd`a"apa]] <Esc>ma:pu=strftime(\'%R\')<CR>"aDdd`a"ap`f',
-                { buffer = true }
-            )
-            vim.keymap.set("n", "<leader>tu", "mf_f[lr `fh", { buffer = true })
-            vim.keymap.set(
-                "n",
-                "<leader>tp",
-                'mf_f[lr~A::partial [[<Esc>ma:pu=strftime(\'%F\')<CR>"aDdd`a"apa]] <Esc>ma:pu=strftime(\'%R\')<CR>"aDdd`a"ap`f',
-                { buffer = true }
-            )
+            map("n", "taskfile", "irrelevant", function()
+                local filepath, linenumber = get_task_location_from_taskfile()
+                run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, true)
+            end, { buffer = true })
 
-            vim.keymap.set("n", "<M-Left>", function()
+            map("n", "taskfile", "undo_irrelevant", function()
+                local filepath, linenumber = get_task_location_from_taskfile()
+                run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
+            end, { buffer = true })
+
+            map("n", "taskfile", "partial", function()
+                local filepath, linenumber = get_task_location_from_taskfile()
+                run_task_cmd({ "partial", filepath, tostring(linenumber) }, true)
+            end, { buffer = true })
+
+            map("n", "taskfile", "filter_tags", function()
+                require("taskbuffer.tags").pick_tags()
+            end, { buffer = true, desc = "Filter tasks by tag" })
+
+            map("n", "taskfile", "reset_filters", function()
+                local buffer = require("taskbuffer.buffer")
+                buffer.clear_tag_filter()
+                buffer.set_show_markers(false)
+                buffer.set_refreshing(true)
+                buffer.refresh_taskfile()
+                vim.cmd("edit!")
+                vim.bo.readonly = true
+                buffer.set_refreshing(false)
+                vim.notify("Filters reset", vim.log.levels.INFO)
+            end, { buffer = true, desc = "Reset task filters" })
+
+            map("n", "taskfile", "toggle_markers", function()
+                local buffer = require("taskbuffer.buffer")
+                buffer.set_show_markers(not buffer.get_show_markers())
+                buffer.set_refreshing(true)
+                buffer.refresh_taskfile()
+                vim.cmd("edit!")
+                vim.bo.readonly = true
+                buffer.set_refreshing(false)
+                vim.notify(
+                    buffer.get_show_markers() and "Showing markers" or "Hiding markers",
+                    vim.log.levels.INFO
+                )
+            end, { buffer = true, desc = "Toggle junk markers" })
+
+            map("n", "taskfile", "shift_date_back", function()
                 shift_task_date_in_taskfile(-vim.v.count1)
             end, { buffer = true, desc = "Shift task date back" })
-            vim.keymap.set("n", "<M-Right>", function()
+
+            map("n", "taskfile", "shift_date_forward", function()
                 shift_task_date_in_taskfile(vim.v.count1)
             end, { buffer = true, desc = "Shift task date forward" })
         end,
@@ -274,10 +358,11 @@ function M.setup_keymaps()
         group = augroup,
         pattern = { "markdown" },
         callback = function()
-            vim.keymap.set("n", "<M-Left>", function()
+            map("n", "markdown", "shift_date_back", function()
                 shift_task_date_in_markdown(-vim.v.count1)
             end, { buffer = true, desc = "Shift task date back" })
-            vim.keymap.set("n", "<M-Right>", function()
+
+            map("n", "markdown", "shift_date_forward", function()
                 shift_task_date_in_markdown(vim.v.count1)
             end, { buffer = true, desc = "Shift task date forward" })
         end,

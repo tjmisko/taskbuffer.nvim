@@ -32,8 +32,21 @@ function M.set_show_markers(val)
 end
 
 function M.refresh_taskfile()
-    local config = require("taskbuffer").config
-    local cmd = { config.task_bin, "list" }
+    local tb = require("taskbuffer")
+    local config = tb.config
+    local cmd = { config.task_bin }
+
+    -- Pass source directories
+    for _, arg in ipairs(tb.source_args()) do
+        table.insert(cmd, arg)
+    end
+
+    -- Pass config JSON
+    table.insert(cmd, "--config")
+    table.insert(cmd, tb.config_json_arg())
+
+    table.insert(cmd, "list")
+
     if show_markers then
         table.insert(cmd, "-markers")
     end
@@ -87,38 +100,6 @@ function M.setup_autocmds()
             M.refresh_taskfile()
             vim.cmd("edit!")
             refreshing = false
-        end,
-    })
-
-    -- Tag filter, reset, and marker toggle keymaps
-    vim.api.nvim_create_autocmd("FileType", {
-        group = augroup,
-        pattern = { "taskfile" },
-        callback = function()
-            vim.keymap.set("n", "#", function()
-                require("taskbuffer.tags").pick_tags()
-            end, { buffer = true, desc = "Filter tasks by tag" })
-
-            vim.keymap.set("n", "<leader>tt", function()
-                M.clear_tag_filter()
-                show_markers = false
-                refreshing = true
-                M.refresh_taskfile()
-                vim.cmd("edit!")
-                vim.bo.readonly = true
-                refreshing = false
-                vim.notify("Filters reset", vim.log.levels.INFO)
-            end, { buffer = true, desc = "Reset task filters" })
-
-            vim.keymap.set("n", "<leader>tj", function()
-                show_markers = not show_markers
-                refreshing = true
-                M.refresh_taskfile()
-                vim.cmd("edit!")
-                vim.bo.readonly = true
-                refreshing = false
-                vim.notify(show_markers and "Showing markers" or "Hiding markers", vim.log.levels.INFO)
-            end, { buffer = true, desc = "Toggle junk markers" })
         end,
     })
 end

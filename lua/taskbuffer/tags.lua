@@ -7,10 +7,17 @@ local action_state = require("telescope.actions.state")
 local M = {}
 
 function M.pick_tags()
-    local config = require("taskbuffer").config
+    local tb = require("taskbuffer")
+    local config = tb.config
     local buffer = require("taskbuffer.buffer")
 
-    local handle = io.popen(config.task_bin .. " tags 2>/dev/null")
+    local cmd = config.task_bin
+    for _, arg in ipairs(tb.source_args()) do
+        cmd = cmd .. " " .. vim.fn.shellescape(arg)
+    end
+    cmd = cmd .. " tags 2>/dev/null"
+
+    local handle = io.popen(cmd)
     if not handle then
         vim.notify("Failed to run task tags", vim.log.levels.ERROR)
         return
