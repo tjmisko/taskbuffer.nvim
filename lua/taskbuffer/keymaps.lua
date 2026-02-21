@@ -283,9 +283,7 @@ function M.setup_keymaps()
                 append_to_line(filepath, tonumber(linenumber), start_suffix)
             end, { buffer = true, desc = "Start task" })
 
-            map("n", "taskfile", "go_to_file", function()
-                vim.cmd("normal _3f|w")
-                vim.cmd('normal! "gy3E')
+            local function go_to_file()
                 local line = vim.fn.getline(".")
                 local filepath = string.sub(line, 1, string.find(line, ":") - 1)
                 local linenumber = string.sub(
@@ -296,7 +294,10 @@ function M.setup_keymaps()
                 vim.cmd("e " .. filepath)
                 vim.cmd("normal " .. linenumber .. "G")
                 vim.cmd("normal zz")
-            end, { buffer = true, desc = "Go to task source" })
+            end
+
+            map("n", "taskfile", "go_to_file", go_to_file, { buffer = true, desc = "Go to task source" })
+            vim.keymap.set("n", "<CR>", go_to_file, { buffer = true, desc = "Go to task source" })
 
             map("n", "taskfile", "irrelevant", function()
                 local filepath, linenumber = get_task_location_from_taskfile()

@@ -100,6 +100,10 @@ function M.setup_autocmds()
             M.refresh_taskfile()
             vim.cmd("edit!")
             refreshing = false
+            -- Reset cursor to beginning of line; conceal groups cause the
+            -- restored column to land far past visible content.
+            local row = vim.api.nvim_win_get_cursor(0)[1]
+            vim.api.nvim_win_set_cursor(0, { row, 0 })
         end,
     })
 end
