@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const stateDir = ".local/state/task"
+const defaultStateDir = ".local/state/task"
 const stateFile = "current_task"
 
 type CurrentTask struct {
@@ -19,13 +19,31 @@ type CurrentTask struct {
 	LineNumber int
 }
 
-func statePath() string {
+// resolveStateDir returns the state directory, using the provided override
+// or falling back to ~/.local/state/task.
+func resolveStateDir(override string) string {
+	if override != "" {
+		return expandHome(override)
+	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, stateDir, stateFile)
+	return filepath.Join(home, defaultStateDir)
+}
+
+func statePathFor(stateDir string) string {
+	return filepath.Join(resolveStateDir(stateDir), stateFile)
+}
+
+// Backward-compatible: uses default state dir
+func statePath() string {
+	return statePathFor("")
 }
 
 func ReadCurrentTask() (*CurrentTask, error) {
-	data, err := os.ReadFile(statePath())
+	return ReadCurrentTaskFrom("")
+}
+
+func ReadCurrentTaskFrom(stateDir string) (*CurrentTask, error) {
+	data, err := os.ReadFile(statePathFor(stateDir))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -54,16 +72,24 @@ func ReadCurrentTask() (*CurrentTask, error) {
 }
 
 func WriteCurrentTask(ct CurrentTask) error {
-	dir := filepath.Dir(statePath())
+	return WriteCurrentTaskTo("", ct)
+}
+
+func WriteCurrentTaskTo(stateDir string, ct CurrentTask) error {
+	dir := filepath.Dir(statePathFor(stateDir))
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 	line := fmt.Sprintf("%d\t%s\t%s\t%d\n", ct.StartTime, ct.Name, ct.FilePath, ct.LineNumber)
-	return os.WriteFile(statePath(), []byte(line), 0644)
+	return os.WriteFile(statePathFor(stateDir), []byte(line), 0644)
 }
 
 func ClearCurrentTask() error {
-	err := os.Remove(statePath())
+	return ClearCurrentTaskFrom("")
+}
+
+func ClearCurrentTaskFrom(stateDir string) error {
+	err := os.Remove(statePathFor(stateDir))
 	if os.IsNotExist(err) {
 		return nil
 	}

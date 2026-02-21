@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,6 +19,26 @@ func (t *tagList) String() string { return strings.Join(*t, ",") }
 func (t *tagList) Set(val string) error {
 	*t = append(*t, val)
 	return nil
+}
+
+// sourceList implements flag.Value for repeatable --source flags.
+type sourceList []string
+
+func (s *sourceList) String() string { return strings.Join(*s, ",") }
+func (s *sourceList) Set(val string) error {
+	*s = append(*s, val)
+	return nil
+}
+
+// Config holds runtime configuration passed via --config JSON.
+type Config struct {
+	StateDir     string            `json:"state_dir"`
+	DateFormat   string            `json:"date_format"`
+	TimeFormat   string            `json:"time_format"`
+	DateWrapper  []string          `json:"date_wrapper"`
+	MarkerPrefix string            `json:"marker_prefix"`
+	TagPrefix    string            `json:"tag_prefix"`
+	Checkbox     map[string]string `json:"checkbox"`
 }
 
 // Verbose controls whether parse warnings are printed to stderr.
@@ -40,7 +62,31 @@ func expandHome(path string) string {
 	return path
 }
 
-func cmdList(notesPath string, args []string) error {
+// resolveNotesPaths determines the source directories from --source flags,
+// NOTES_PATH env, or the default.
+func resolveNotesPaths(sources sourceList) []string {
+	if len(sources) > 0 {
+		result := make([]string, len(sources))
+		for i, s := range sources {
+			result[i] = expandHome(s)
+		}
+		return result
+	}
+	if envPath := os.Getenv("NOTES_PATH"); envPath != "" {
+		return []string{expandHome(envPath)}
+	}
+	return []string{expandHome(defaultNotesPath)}
+}
+
+func parseConfig(configJSON string) Config {
+	var cfg Config
+	if configJSON != "" {
+		json.Unmarshal([]byte(configJSON), &cfg)
+	}
+	return cfg
+}
+
+func cmdList(notesPaths []string, args []string) error {
 	var tags tagList
 	var showMarkers bool
 
@@ -51,7 +97,7 @@ func cmdList(notesPath string, args []string) error {
 		return err
 	}
 
-	matches, err := Scan(notesPath)
+	matches, err := Scan(notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
 	}
@@ -59,7 +105,7 @@ func cmdList(notesPath string, args []string) error {
 	allTasks := ParseTasks(matches)
 	MergeFrontmatterTags(allTasks)
 
-	projectTasks, err := ScanProjects(notesPath)
+	projectTasks, err := ScanProjects(notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan projects: %w", err)
 	}
@@ -81,23 +127,21 @@ func cmdList(notesPath string, args []string) error {
 	return nil
 }
 
-func cmdDo(notesPath string) error {
+func cmdDo(notesPaths []string, cfg Config) error {
 	now := time.Now().In(time.Local)
 	today := now.Format("2006-01-02")
 
-	// If a task is already running, stop it first
-	existing, err := ReadCurrentTask()
+	existing, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
 		return err
 	}
 	if existing != nil {
-		if err := cmdStop(); err != nil {
+		if err := cmdStopWithConfig(cfg); err != nil {
 			return fmt.Errorf("stopping current task: %w", err)
 		}
 	}
 
-	// Scan for today's open tasks
-	matches, err := Scan(notesPath)
+	matches, err := Scan(notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
 	}
@@ -113,24 +157,20 @@ func cmdDo(notesPath string) error {
 		return nil
 	}
 
-	// Build fzf input: index\tbody
 	var fzfInput strings.Builder
 	for i, t := range todayTasks {
 		fmt.Fprintf(&fzfInput, "%d\t%s\n", i, t.Body)
 	}
 
-	// Run fzf for selection
 	cmd := exec.Command("fzf", "--with-nth=2..", "--delimiter=\t")
 	cmd.Stdin = strings.NewReader(fzfInput.String())
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		// fzf returns exit 130 on Ctrl-C / no selection
 		fmt.Println("No task selected.")
 		return nil
 	}
 
-	// Parse selection
 	selection := strings.TrimRight(string(out), "\n\r")
 	parts := strings.SplitN(selection, "\t", 2)
 	var idx int
@@ -140,20 +180,18 @@ func cmdDo(notesPath string) error {
 	}
 	task := todayTasks[idx]
 
-	// Write ::start marker to source file
 	marker := FormatMarker("start", now)
 	if err := AppendToLine(task.FilePath, task.LineNumber, marker); err != nil {
 		return fmt.Errorf("writing start marker: %w", err)
 	}
 
-	// Save current task state
 	ct := CurrentTask{
 		StartTime:  now.Unix(),
 		Name:       task.Body,
 		FilePath:   task.FilePath,
 		LineNumber: task.LineNumber,
 	}
-	if err := WriteCurrentTask(ct); err != nil {
+	if err := WriteCurrentTaskTo(cfg.StateDir, ct); err != nil {
 		return fmt.Errorf("saving state: %w", err)
 	}
 
@@ -161,10 +199,10 @@ func cmdDo(notesPath string) error {
 	return nil
 }
 
-func cmdStop() error {
+func cmdStopWithConfig(cfg Config) error {
 	now := time.Now().In(time.Local)
 
-	ct, err := ReadCurrentTask()
+	ct, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
 		return err
 	}
@@ -178,7 +216,7 @@ func cmdStop() error {
 		return fmt.Errorf("writing stop marker: %w", err)
 	}
 
-	if err := ClearCurrentTask(); err != nil {
+	if err := ClearCurrentTaskFrom(cfg.StateDir); err != nil {
 		return err
 	}
 
@@ -186,10 +224,14 @@ func cmdStop() error {
 	return nil
 }
 
-func cmdComplete() error {
+func cmdStop() error {
+	return cmdStopWithConfig(Config{})
+}
+
+func cmdCompleteWithConfig(cfg Config) error {
 	now := time.Now().In(time.Local)
 
-	ct, err := ReadCurrentTask()
+	ct, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
 		return err
 	}
@@ -206,7 +248,7 @@ func cmdComplete() error {
 		return fmt.Errorf("checking off task: %w", err)
 	}
 
-	if err := ClearCurrentTask(); err != nil {
+	if err := ClearCurrentTaskFrom(cfg.StateDir); err != nil {
 		return err
 	}
 
@@ -214,8 +256,12 @@ func cmdComplete() error {
 	return nil
 }
 
-func cmdCurrent() error {
-	ct, err := ReadCurrentTask()
+func cmdComplete() error {
+	return cmdCompleteWithConfig(Config{})
+}
+
+func cmdCurrent(cfg Config) error {
+	ct, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
 		return err
 	}
@@ -226,8 +272,8 @@ func cmdCurrent() error {
 	return nil
 }
 
-func cmdTags(notesPath string) error {
-	matches, err := Scan(notesPath)
+func cmdTags(notesPaths []string) error {
+	matches, err := Scan(notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
 	}
@@ -235,7 +281,7 @@ func cmdTags(notesPath string) error {
 	allTasks := ParseTasks(matches)
 	MergeFrontmatterTags(allTasks)
 
-	projectTasks, err := ScanProjects(notesPath)
+	projectTasks, err := ScanProjects(notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan projects: %w", err)
 	}
@@ -263,13 +309,216 @@ func cmdTags(notesPath string) error {
 	return nil
 }
 
-func main() {
-	notesPath := expandHome(defaultNotesPath)
-	if envPath := os.Getenv("NOTES_PATH"); envPath != "" {
-		notesPath = expandHome(envPath)
+// cmdDefer adds a ::deferral marker and preserves the original date.
+func cmdDefer(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: task defer <filepath> <linenum>")
+	}
+	filePath := args[0]
+	lineNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("bad line number: %w", err)
 	}
 
-	// Strip -v / --verbose from anywhere in args before subcommand parsing
+	now := time.Now().In(time.Local)
+
+	// Read the line to check for existing ::original marker
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", filePath, err)
+	}
+	lines := strings.Split(string(data), "\n")
+	idx := lineNum - 1
+	if idx < 0 || idx >= len(lines) {
+		return fmt.Errorf("line %d out of range", lineNum)
+	}
+
+	line := lines[idx]
+
+	// If no ::original marker, copy the current date as ::original
+	if !strings.Contains(line, "::original") {
+		// Extract the current due date from the line
+		dateMatch := dateRe.FindStringSubmatch(line)
+		if dateMatch != nil {
+			originalMarker := fmt.Sprintf(" ::original [[%s]]", dateMatch[1])
+			line = strings.TrimRight(line, " \t") + originalMarker
+		}
+	}
+
+	// Append ::deferral marker
+	deferralMarker := FormatMarker("deferral", now)
+	line = strings.TrimRight(line, " \t") + " " + deferralMarker
+	lines[idx] = line
+
+	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
+}
+
+// cmdIrrelevant marks a task as irrelevant: changes checkbox to [-] and appends marker.
+func cmdIrrelevant(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: task irrelevant <filepath> <linenum>")
+	}
+	filePath := args[0]
+	lineNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("bad line number: %w", err)
+	}
+
+	now := time.Now().In(time.Local)
+	marker := FormatMarker("irrelevant", now)
+
+	if err := ChangeCheckbox(filePath, lineNum, "- [ ]", "- [-]"); err != nil {
+		return err
+	}
+	return AppendToLine(filePath, lineNum, marker)
+}
+
+// cmdPartial marks a task as partial: changes checkbox to [~] and appends marker.
+func cmdPartial(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: task partial <filepath> <linenum>")
+	}
+	filePath := args[0]
+	lineNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("bad line number: %w", err)
+	}
+
+	now := time.Now().In(time.Local)
+	marker := FormatMarker("partial", now)
+
+	if err := ChangeCheckbox(filePath, lineNum, "- [ ]", "- [~]"); err != nil {
+		return err
+	}
+	return AppendToLine(filePath, lineNum, marker)
+}
+
+// cmdUnset undoes an irrelevant or partial: removes last marker and restores checkbox.
+func cmdUnset(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: task unset <filepath> <linenum>")
+	}
+	filePath := args[0]
+	lineNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("bad line number: %w", err)
+	}
+
+	// Read the line to determine which kind of marker to remove
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", filePath, err)
+	}
+	lines := strings.Split(string(data), "\n")
+	idx := lineNum - 1
+	if idx < 0 || idx >= len(lines) {
+		return fmt.Errorf("line %d out of range", lineNum)
+	}
+
+	line := lines[idx]
+
+	// Try irrelevant first, then partial
+	if strings.Contains(line, "::irrelevant") {
+		if err := RemoveLastMarker(filePath, lineNum, "irrelevant"); err != nil {
+			return err
+		}
+		return ChangeCheckbox(filePath, lineNum, "- [-]", "- [ ]")
+	}
+	if strings.Contains(line, "::partial") {
+		if err := RemoveLastMarker(filePath, lineNum, "partial"); err != nil {
+			return err
+		}
+		return ChangeCheckbox(filePath, lineNum, "- [~]", "- [ ]")
+	}
+
+	return nil
+}
+
+// cmdCheck quick check-off: changes [ ] to [x] without markers.
+func cmdCheck(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: task check <filepath> <linenum>")
+	}
+	filePath := args[0]
+	lineNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("bad line number: %w", err)
+	}
+
+	return CheckOffTask(filePath, lineNum)
+}
+
+// cmdCompleteAt completes a specific task by filepath/line (not the "current" running task).
+func cmdCompleteAt(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: task complete-at <filepath> <linenum>")
+	}
+	filePath := args[0]
+	lineNum, err := strconv.Atoi(args[1])
+	if err != nil {
+		return fmt.Errorf("bad line number: %w", err)
+	}
+
+	now := time.Now().In(time.Local)
+	marker := FormatMarker("complete", now)
+
+	if err := AppendToLine(filePath, lineNum, marker); err != nil {
+		return err
+	}
+	return CheckOffTask(filePath, lineNum)
+}
+
+// cmdCreate creates a new task line in a file.
+func cmdCreate(args []string) error {
+	fs := flag.NewFlagSet("create", flag.ContinueOnError)
+	file := fs.String("file", "", "target file (overrides inbox default)")
+	header := fs.String("header", "", "insert below this markdown header")
+	inboxFile := fs.String("inbox-file", "", "default inbox file from config")
+	inboxHeader := fs.String("inbox-header", "", "default inbox header from config")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	body := strings.Join(fs.Args(), " ")
+	if body == "" {
+		return fmt.Errorf("usage: task create [--file FILE] [--header HEADER] <body>")
+	}
+
+	taskLine := "- [ ] " + body
+
+	// Determine target file
+	targetFile := *file
+	if targetFile == "" {
+		targetFile = *inboxFile
+	}
+	if targetFile == "" {
+		return fmt.Errorf("no target file specified (use --file or configure inbox)")
+	}
+	targetFile = expandHome(targetFile)
+
+	// Ensure parent directory exists
+	dir := strings.TrimRight(targetFile, "/")
+	if lastSlash := strings.LastIndex(dir, "/"); lastSlash > 0 {
+		os.MkdirAll(dir[:lastSlash], 0755)
+	}
+
+	// Determine header
+	targetHeader := *header
+	if targetHeader == "" {
+		targetHeader = *inboxHeader
+	}
+
+	if targetHeader != "" {
+		return InsertAfterHeader(targetFile, targetHeader, taskLine)
+	}
+	return AppendToFile(targetFile, taskLine)
+}
+
+func main() {
+	// Parse global flags first
+	var sources sourceList
+	var configJSON string
+
 	filtered := make([]string, 0, len(os.Args))
 	filtered = append(filtered, os.Args[0])
 	for _, a := range os.Args[1:] {
@@ -280,34 +529,79 @@ func main() {
 		}
 	}
 
+	// Extract --source and --config flags from anywhere before subcommand parsing
+	globalFS := flag.NewFlagSet("global", flag.ContinueOnError)
+	globalFS.Var(&sources, "source", "notes source directory (repeatable)")
+	globalFS.StringVar(&configJSON, "config", "", "JSON config string")
+
+	// Find subcommand position: first arg that doesn't start with -
+	subCmdIdx := 1
+	for subCmdIdx < len(filtered) {
+		arg := filtered[subCmdIdx]
+		if !strings.HasPrefix(arg, "-") {
+			break
+		}
+		// Skip the value of --source and --config flags
+		if arg == "--source" || arg == "--config" {
+			subCmdIdx += 2
+			continue
+		}
+		if strings.HasPrefix(arg, "--source=") || strings.HasPrefix(arg, "--config=") {
+			subCmdIdx++
+			continue
+		}
+		subCmdIdx++
+	}
+
+	// Parse global flags (everything before subcommand)
+	if subCmdIdx > 1 {
+		globalFS.Parse(filtered[1:subCmdIdx])
+	}
+
+	notesPaths := resolveNotesPaths(sources)
+	cfg := parseConfig(configJSON)
+
 	cmd := "list"
-	if len(filtered) > 1 {
-		cmd = filtered[1]
+	if subCmdIdx < len(filtered) {
+		cmd = filtered[subCmdIdx]
+	}
+
+	subArgs := []string{}
+	if subCmdIdx+1 < len(filtered) {
+		subArgs = filtered[subCmdIdx+1:]
 	}
 
 	var err error
-	// Extra args after the subcommand (e.g., --tag, --markers)
-	subArgs := []string{}
-	if len(filtered) > 2 {
-		subArgs = filtered[2:]
-	}
-
 	switch cmd {
 	case "list":
-		err = cmdList(notesPath, subArgs)
+		err = cmdList(notesPaths, subArgs)
 	case "do", "start":
-		err = cmdDo(notesPath)
+		err = cmdDo(notesPaths, cfg)
 	case "stop", "pause":
-		err = cmdStop()
+		err = cmdStopWithConfig(cfg)
 	case "complete", "done":
-		err = cmdComplete()
+		err = cmdCompleteWithConfig(cfg)
 	case "current":
-		err = cmdCurrent()
+		err = cmdCurrent(cfg)
 	case "tags":
-		err = cmdTags(notesPath)
+		err = cmdTags(notesPaths)
+	case "defer":
+		err = cmdDefer(subArgs)
+	case "irrelevant":
+		err = cmdIrrelevant(subArgs)
+	case "partial":
+		err = cmdPartial(subArgs)
+	case "unset":
+		err = cmdUnset(subArgs)
+	case "check":
+		err = cmdCheck(subArgs)
+	case "complete-at":
+		err = cmdCompleteAt(subArgs)
+	case "create":
+		err = cmdCreate(subArgs)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		fmt.Fprintf(os.Stderr, "usage: task [list|do|stop|complete|current|tags]\n")
+		fmt.Fprintf(os.Stderr, "usage: task [list|do|stop|complete|current|tags|defer|irrelevant|partial|unset|check|complete-at|create]\n")
 		os.Exit(1)
 	}
 
