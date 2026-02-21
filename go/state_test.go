@@ -70,7 +70,7 @@ func TestClearCurrentTask(t *testing.T) {
 	}
 
 	// File should be gone
-	path := filepath.Join(tmp, stateDir, stateFile)
+	path := filepath.Join(tmp, defaultStateDir, stateFile)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("state file still exists after clear")
 	}
