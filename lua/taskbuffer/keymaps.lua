@@ -322,6 +322,7 @@ function M.setup_keymaps()
                 local buffer = require("taskbuffer.buffer")
                 buffer.clear_tag_filter()
                 buffer.set_show_markers(false)
+                buffer.set_show_undated(require("taskbuffer").config.show_undated)
                 buffer.set_refreshing(true)
                 buffer.refresh_taskfile()
                 vim.cmd("edit!")
@@ -329,6 +330,20 @@ function M.setup_keymaps()
                 buffer.set_refreshing(false)
                 vim.notify("Filters reset", vim.log.levels.INFO)
             end, { buffer = true, desc = "Reset task filters" })
+
+            map("n", "taskfile", "toggle_undated", function()
+                local buffer = require("taskbuffer.buffer")
+                buffer.set_show_undated(not buffer.get_show_undated())
+                buffer.set_refreshing(true)
+                buffer.refresh_taskfile()
+                vim.cmd("edit!")
+                vim.bo.readonly = true
+                buffer.set_refreshing(false)
+                vim.notify(
+                    buffer.get_show_undated() and "Showing undated tasks" or "Hiding undated tasks",
+                    vim.log.levels.INFO
+                )
+            end, { buffer = true, desc = "Toggle undated tasks" })
 
             map("n", "taskfile", "toggle_markers", function()
                 local buffer = require("taskbuffer.buffer")

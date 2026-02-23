@@ -312,6 +312,54 @@ func TestFormatTaskfile_TagFilter(t *testing.T) {
 	}
 }
 
+func TestFormatTaskfile_IgnoreUndated(t *testing.T) {
+	tasks := []Task{
+		{FilePath: "/a.md", LineNumber: 1, Body: "Today task", DueDate: mustDatePtr("2026-02-17"), Status: "open"},
+		{FilePath: "/b.md", LineNumber: 2, Body: "Undated task", Status: "open"},
+	}
+
+	got := FormatTaskfile(tasks, testNow, FormatOpts{IgnoreUndated: true})
+
+	if strings.Contains(got, "# Someday") {
+		t.Error("should not contain Someday header when IgnoreUndated is true")
+	}
+	if strings.Contains(got, "Undated task") {
+		t.Error("should not contain undated task body when IgnoreUndated is true")
+	}
+	if !strings.Contains(got, "Today task") {
+		t.Error("should still contain dated task")
+	}
+}
+
+func TestFormatTaskfile_IgnoreUndatedKeepsDated(t *testing.T) {
+	tasks := []Task{
+		{FilePath: "/a.md", LineNumber: 1, Body: "Overdue task", DueDate: mustDatePtr("2026-02-15"), Status: "open"},
+		{FilePath: "/b.md", LineNumber: 2, Body: "Today task", DueDate: mustDatePtr("2026-02-17"), Status: "open"},
+		{FilePath: "/c.md", LineNumber: 3, Body: "Undated task", Status: "open"},
+	}
+
+	got := FormatTaskfile(tasks, testNow, FormatOpts{IgnoreUndated: true})
+
+	if !strings.Contains(got, "# Overdue") {
+		t.Error("should contain Overdue header")
+	}
+	if !strings.Contains(got, "# Today") {
+		t.Error("should contain Today header")
+	}
+	if !strings.Contains(got, "Overdue task") {
+		t.Error("should contain overdue task")
+	}
+	if !strings.Contains(got, "Today task") {
+		t.Error("should contain today task")
+	}
+	if strings.Contains(got, "# Someday") {
+		t.Error("should not contain Someday header")
+	}
+	if strings.Contains(got, "Undated task") {
+		t.Error("should not contain undated task")
+	}
+}
+
 func TestFormatTaskfile_TagFilterOR(t *testing.T) {
 	tasks := []Task{
 		{FilePath: "/a.md", LineNumber: 1, Body: "SSPI task", DueDate: mustDatePtr("2026-02-17"), Tags: []string{"sspi"}, Status: "open"},

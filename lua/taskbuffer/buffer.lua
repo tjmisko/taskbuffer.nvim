@@ -2,6 +2,7 @@ local M = {}
 
 local active_tag_filter = {}
 local show_markers = false
+local show_undated = nil
 local refreshing = false
 local autocmds_registered = false
 
@@ -31,6 +32,17 @@ function M.set_show_markers(val)
     show_markers = val
 end
 
+function M.get_show_undated()
+    if show_undated == nil then
+        show_undated = require("taskbuffer").config.show_undated
+    end
+    return show_undated
+end
+
+function M.set_show_undated(val)
+    show_undated = val
+end
+
 function M.refresh_taskfile()
     local tb = require("taskbuffer")
     local config = tb.config
@@ -49,6 +61,9 @@ function M.refresh_taskfile()
 
     if show_markers then
         table.insert(cmd, "-markers")
+    end
+    if not M.get_show_undated() then
+        table.insert(cmd, "--ignore-undated")
     end
     for _, tag in ipairs(active_tag_filter) do
         table.insert(cmd, "--tag")

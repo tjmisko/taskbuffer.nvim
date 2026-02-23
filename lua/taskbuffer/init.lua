@@ -9,6 +9,8 @@ M.config = {
     state_dir = "~/.local/state/task",
     tmpdir = "/tmp",
 
+    show_undated = true,
+
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Documents/Notes" },
 
@@ -49,6 +51,7 @@ M.config = {
             filter_tags = "#",
             reset_filters = "<leader>tt",
             toggle_markers = "<leader>tj",
+            toggle_undated = "<leader>ts",
             shift_date_back = "<M-Left>",
             shift_date_forward = "<M-Right>",
         },

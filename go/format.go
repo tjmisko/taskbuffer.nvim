@@ -34,8 +34,9 @@ func inBucket(date time.Time, idx int, buckets []dateBucket) bool {
 }
 
 type FormatOpts struct {
-	ShowMarkers bool
-	TagFilter   []string // only show tasks matching these tags (OR logic)
+	ShowMarkers  bool
+	IgnoreUndated bool
+	TagFilter    []string // only show tasks matching these tags (OR logic)
 }
 
 func formatTaskLine(t Task, opts FormatOpts) string {
@@ -178,7 +179,7 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 	}
 
 	// Append undated tasks under # Someday
-	if len(undated) > 0 {
+	if len(undated) > 0 && !opts.IgnoreUndated {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}

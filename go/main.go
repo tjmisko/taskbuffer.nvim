@@ -89,10 +89,12 @@ func parseConfig(configJSON string) Config {
 func cmdList(notesPaths []string, args []string) error {
 	var tags tagList
 	var showMarkers bool
+	var ignoreUndated bool
 
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.Var(&tags, "tag", "filter by tag (repeatable, OR logic)")
 	fs.BoolVar(&showMarkers, "markers", false, "show :: markers")
+	fs.BoolVar(&ignoreUndated, "ignore-undated", false, "hide undated tasks")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -120,8 +122,9 @@ func cmdList(notesPaths []string, args []string) error {
 
 	now := time.Now().In(time.Local)
 	opts := FormatOpts{
-		ShowMarkers: showMarkers,
-		TagFilter:   tags,
+		ShowMarkers:  showMarkers,
+		IgnoreUndated: ignoreUndated,
+		TagFilter:    tags,
 	}
 	fmt.Print(FormatTaskfile(tasks, now, opts))
 	return nil
