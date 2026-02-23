@@ -3,7 +3,7 @@ All your tasks in one place. Tasks are defined in lines of plaintext, in your pr
 
 ## Tasks
 - [x] Toggleable option for Someday Task Visibility (flag in go script and vim command and keybinding)
-- [ ] Make Timebreaks Configurable (Today, Tomorrow, etc.)
+- [ ] Make Timebreaks Configurable (Today, Tomorrow, etc.) → [horizons.md](horizons.md)
 - [ ] Inline Edits in Task Buffer to Task Content and Tags Save Out to the Original File?
 - [ ] Test Alternate Configurations for Tasks and Setup:
 	- [ ] New Test Vaults Can Be Created and Gitignored and Mixed Inside the Plugin Folders or Symlinked or Something
