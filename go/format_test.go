@@ -379,3 +379,104 @@ func TestFormatTaskfile_TagFilterOR(t *testing.T) {
 		t.Error("should not include task with non-matching tag")
 	}
 }
+
+func TestFormatTaskfile_CustomHorizons(t *testing.T) {
+	horizons := []ResolvedHorizon{
+		{Label: "# Urgent", Cutoff: time.Date(2026, 2, 10, 0, 0, 0, 0, time.Local), Order: 0},
+		{Label: "# Current", Cutoff: time.Date(2026, 2, 17, 0, 0, 0, 0, time.Local), Order: 1},
+		{Label: "# Upcoming", Cutoff: time.Date(2026, 2, 24, 0, 0, 0, 0, time.Local), Order: 2},
+		{Label: "# Backlog", Undated: true, Order: 3},
+	}
+
+	tasks := []Task{
+		{FilePath: "/a.md", LineNumber: 1, Body: "Old task", DueDate: mustDatePtr("2026-02-15"), Status: "open"},
+		{FilePath: "/b.md", LineNumber: 2, Body: "Today task", DueDate: mustDatePtr("2026-02-17"), Status: "open"},
+		{FilePath: "/c.md", LineNumber: 3, Body: "Next week task", DueDate: mustDatePtr("2026-02-25"), Status: "open"},
+		{FilePath: "/d.md", LineNumber: 4, Body: "Someday task", Status: "open"},
+	}
+
+	opts := FormatOpts{Horizons: horizons, Overlap: "sorted"}
+	got := FormatTaskfile(tasks, testNow, opts)
+
+	if !strings.Contains(got, "# Urgent") {
+		t.Error("should contain Urgent header")
+	}
+	if !strings.Contains(got, "# Current") {
+		t.Error("should contain Current header")
+	}
+	if !strings.Contains(got, "# Upcoming") {
+		t.Error("should contain Upcoming header")
+	}
+	if !strings.Contains(got, "# Backlog") {
+		t.Error("should contain Backlog header")
+	}
+	// Should NOT contain default headers
+	if strings.Contains(got, "# Someday") {
+		t.Error("should not contain default Someday header")
+	}
+}
+
+func TestFormatTaskfile_CustomUndatedLabel(t *testing.T) {
+	horizons := []ResolvedHorizon{
+		{Label: "# Now", Cutoff: time.Date(2026, 2, 17, 0, 0, 0, 0, time.Local), Order: 0},
+		{Label: "# Ideas", Undated: true, Order: 1},
+	}
+
+	tasks := []Task{
+		{FilePath: "/a.md", LineNumber: 1, Body: "Undated task", Status: "open"},
+	}
+
+	opts := FormatOpts{Horizons: horizons}
+	got := FormatTaskfile(tasks, testNow, opts)
+
+	if !strings.Contains(got, "# Ideas") {
+		t.Error("should use custom undated label '# Ideas'")
+	}
+	if strings.Contains(got, "# Someday") {
+		t.Error("should not contain default Someday label")
+	}
+}
+
+func TestFormatTaskfile_FirstMatchOverlap(t *testing.T) {
+	// Horizons with overlapping ranges — first_match should use user order
+	horizons := []ResolvedHorizon{
+		{Label: "# Priority", Cutoff: time.Date(2026, 2, 15, 0, 0, 0, 0, time.Local), Order: 0},
+		{Label: "# Normal", Cutoff: time.Date(2026, 2, 10, 0, 0, 0, 0, time.Local), Order: 1},
+		{Label: "# Later", Cutoff: time.Date(2026, 2, 20, 0, 0, 0, 0, time.Local), Order: 2},
+	}
+
+	tasks := []Task{
+		// This date is >= Priority cutoff and < Later cutoff
+		{FilePath: "/a.md", LineNumber: 1, Body: "Test task", DueDate: mustDatePtr("2026-02-17"), Status: "open"},
+	}
+
+	opts := FormatOpts{Horizons: horizons, Overlap: "first_match"}
+	got := FormatTaskfile(tasks, testNow, opts)
+
+	// Should land in Priority (first match in list order)
+	if !strings.Contains(got, "# Priority") {
+		t.Errorf("task should be in Priority section with first_match, got:\n%s", got)
+	}
+}
+
+func TestFormatTaskfile_NarrowestOverlap(t *testing.T) {
+	// Wide and narrow horizons — narrowest should pick the tighter one
+	horizons := []ResolvedHorizon{
+		{Label: "# Wide", Cutoff: time.Date(2026, 1, 1, 0, 0, 0, 0, time.Local), Order: 0},
+		{Label: "# Narrow", Cutoff: time.Date(2026, 2, 16, 0, 0, 0, 0, time.Local), Order: 1},
+		{Label: "# Far", Cutoff: time.Date(2026, 3, 1, 0, 0, 0, 0, time.Local), Order: 2},
+	}
+
+	tasks := []Task{
+		// 2026-02-17 is in both Wide (Jan 1 - Feb 16) and Narrow (Feb 16 - Mar 1) ranges
+		// Narrow has span of ~13 days vs Wide's ~46 days
+		{FilePath: "/a.md", LineNumber: 1, Body: "Test task", DueDate: mustDatePtr("2026-02-17"), Status: "open"},
+	}
+
+	opts := FormatOpts{Horizons: horizons, Overlap: "narrowest"}
+	got := FormatTaskfile(tasks, testNow, opts)
+
+	if !strings.Contains(got, "# Narrow") {
+		t.Errorf("task should be in Narrow section with narrowest overlap, got:\n%s", got)
+	}
+}

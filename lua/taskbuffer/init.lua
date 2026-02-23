@@ -11,6 +11,11 @@ M.config = {
 
     show_undated = true,
 
+    -- Time horizons: nil uses defaults; set to customize bucket labels/boundaries
+    horizons = nil,
+    horizons_overlap = "sorted",
+    week_start = "monday",
+
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Documents/Notes" },
 
@@ -145,6 +150,15 @@ function M.config_json_arg()
         tag_prefix = M.config.formats.tag_prefix,
         checkbox = M.config.formats.checkbox,
     }
+    if M.config.horizons then
+        cfg.horizons = M.config.horizons
+    end
+    if M.config.horizons_overlap ~= "sorted" then
+        cfg.horizons_overlap = M.config.horizons_overlap
+    end
+    if M.config.week_start ~= "monday" then
+        cfg.week_start = M.config.week_start
+    end
     return vim.json.encode(cfg)
 end
 
