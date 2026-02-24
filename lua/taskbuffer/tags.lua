@@ -1,25 +1,29 @@
-local pickers = require("telescope.pickers")
-local finders = require("telescope.finders")
-local conf = require("telescope.config").values
-local actions = require("telescope.actions")
-local action_state = require("telescope.actions.state")
-
 local M = {}
 
 function M.pick_tags()
-    local tb = require("taskbuffer")
-    local config = tb.config
+    local ok, pickers = pcall(require, "telescope.pickers")
+    if not ok then
+        vim.notify("[taskbuffer] telescope.nvim is required for tag filtering", vim.log.levels.ERROR)
+        return
+    end
+    local finders = require("telescope.finders")
+    local conf = require("telescope.config").values
+    local actions = require("telescope.actions")
+    local action_state = require("telescope.actions.state")
+
+    local config = require("taskbuffer.config")
+    local cfg = config.values
     local buffer = require("taskbuffer.buffer")
 
-    local cmd = config.task_bin
-    for _, arg in ipairs(tb.source_args()) do
+    local cmd = cfg.task_bin
+    for _, arg in ipairs(config.source_args()) do
         cmd = cmd .. " " .. vim.fn.shellescape(arg)
     end
     cmd = cmd .. " tags 2>/dev/null"
 
     local handle = io.popen(cmd)
     if not handle then
-        vim.notify("Failed to run task tags", vim.log.levels.ERROR)
+        vim.notify("[taskbuffer] failed to run task tags", vim.log.levels.ERROR)
         return
     end
     local output = handle:read("*a")
@@ -31,7 +35,7 @@ function M.pick_tags()
     end
 
     if #tags == 0 then
-        vim.notify("No tags found", vim.log.levels.WARN)
+        vim.notify("[taskbuffer] no tags found", vim.log.levels.WARN)
         return
     end
 
@@ -65,11 +69,11 @@ function M.pick_tags()
                     buffer.set_refreshing(true)
                     buffer.refresh_taskfile()
 
-                    local filepath = config.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
+                    local filepath = cfg.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
                     vim.cmd("edit! " .. filepath)
                     vim.bo.readonly = true
                     buffer.set_refreshing(false)
-                    vim.notify("Filtering by: " .. table.concat(selected_tags, ", "), vim.log.levels.INFO)
+                    vim.notify("[taskbuffer] filtering by: " .. table.concat(selected_tags, ", "), vim.log.levels.INFO)
                 end)
                 return true
             end,
