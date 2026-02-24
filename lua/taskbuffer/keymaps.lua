@@ -211,7 +211,7 @@ function M.setup_keymaps()
     local augroup = vim.api.nvim_create_augroup("TaskBufferKeymaps", { clear = true })
 
     -- Global keymaps
-    map("n", "global", "note", 'o<Tab>- [[<Esc>ma:pu=strftime(\'%F\')<CR>"aDdd`a"apa]]: ')
+    map("n", "global", "note", "o<Tab>- [[<Esc>ma:pu=strftime('%F')<CR>\"aDdd`a\"apa]]: ")
 
     map("n", "global", "complete", function()
         local filepath, linenumber = get_task_location_from_current_buffer()
@@ -262,11 +262,8 @@ function M.setup_keymaps()
                 end
                 local line = vim.fn.getline(".")
                 local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-                local linenumber = string.sub(
-                    line,
-                    string.find(line, ":") + 1,
-                    string.find(line, ":", string.find(line, ":") + 1) - 1
-                )
+                local linenumber =
+                    string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
                 local datetime = os.time()
                 local function trim(s)
                     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -286,11 +283,8 @@ function M.setup_keymaps()
             local function go_to_file()
                 local line = vim.fn.getline(".")
                 local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-                local linenumber = string.sub(
-                    line,
-                    string.find(line, ":") + 1,
-                    string.find(line, ":", string.find(line, ":") + 1) - 1
-                )
+                local linenumber =
+                    string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
                 vim.cmd("e " .. filepath)
                 vim.cmd("normal " .. linenumber .. "G")
                 vim.cmd("normal zz")
@@ -353,10 +347,7 @@ function M.setup_keymaps()
                 vim.cmd("edit!")
                 vim.bo.readonly = true
                 buffer.set_refreshing(false)
-                vim.notify(
-                    buffer.get_show_markers() and "Showing markers" or "Hiding markers",
-                    vim.log.levels.INFO
-                )
+                vim.notify(buffer.get_show_markers() and "Showing markers" or "Hiding markers", vim.log.levels.INFO)
             end, { buffer = true, desc = "Toggle junk markers" })
 
             map("n", "taskfile", "shift_date_back", function()

@@ -107,10 +107,7 @@ function M.setup(opts)
 
     -- Backward compat: convert notes_dir to sources
     if opts.notes_dir then
-        vim.notify(
-            "[taskbuffer] `notes_dir` is deprecated, use `sources = { ... }` instead",
-            vim.log.levels.WARN
-        )
+        vim.notify("[taskbuffer] `notes_dir` is deprecated, use `sources = { ... }` instead", vim.log.levels.WARN)
         if not opts.sources then
             opts.sources = { opts.notes_dir }
         end
