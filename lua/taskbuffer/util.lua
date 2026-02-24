@@ -1,6 +1,9 @@
 local M = {}
 
 --- Parse a taskfile line into filepath and line number.
+---@param line string
+---@return string filepath
+---@return integer|nil linenumber
 function M.parse_taskfile_line(line)
     local filepath = string.sub(line, 1, string.find(line, ":") - 1)
     local second_colon = string.find(line, ":", string.find(line, ":") + 1)
@@ -9,6 +12,9 @@ function M.parse_taskfile_line(line)
 end
 
 --- Replace a single line in a file on disk.
+---@param path string
+---@param target_line integer
+---@param new_content string
 function M.replace_line_in_file(path, target_line, new_content)
     local lines = {}
     local i = 0
@@ -31,6 +37,9 @@ function M.replace_line_in_file(path, target_line, new_content)
 end
 
 --- Append a suffix to a specific line in a file on disk.
+---@param path string
+---@param target_line integer
+---@param suffix string
 function M.append_to_line(path, target_line, suffix)
     local lines = {}
     local i = 0
@@ -52,6 +61,10 @@ function M.append_to_line(path, target_line, suffix)
 end
 
 --- Shift the due date in a task line string by a number of days.
+---@param line string
+---@param days integer
+---@return string|nil new_line
+---@return string|nil new_date
 function M.shift_date_in_string(line, days)
     local prefix, y, m, d, suffix = line:match("^(.-%(@%[%[)(%d%d%d%d)%-(%d%d)%-(%d%d)(%]%].*)$")
     if not y then
@@ -64,6 +77,7 @@ function M.shift_date_in_string(line, days)
 end
 
 --- Get the visual selection as a list of lines.
+---@return string[]
 function M.get_visual_selection()
     local s_mark = vim.api.nvim_buf_get_mark(0, "<")
     local e_mark = vim.api.nvim_buf_get_mark(0, ">")
@@ -90,6 +104,9 @@ function M.get_visual_selection()
 end
 
 --- Run a Go binary command and optionally refresh the taskfile buffer.
+---@param args string[]
+---@param refresh boolean
+---@return boolean success
 function M.run_task_cmd(args, refresh)
     local config = require("taskbuffer.config").values
     local cmd = { config.task_bin }

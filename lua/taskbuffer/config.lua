@@ -1,9 +1,72 @@
+---@class TaskbufferCheckbox
+---@field open string
+---@field done string
+---@field irrelevant string
+
+---@class TaskbufferFormats
+---@field date string strftime format for dates
+---@field time string strftime format for times
+---@field duration string duration template
+---@field tag_prefix string prefix character for tags
+---@field checkbox TaskbufferCheckbox checkbox markers
+---@field date_wrapper string[] two-element array for date wrapping
+---@field marker_prefix string prefix for state markers
+
+---@class TaskbufferGlobalKeymaps
+---@field complete string|false
+---@field defer string|false
+---@field check_off string|false
+---@field irrelevant string|false
+---@field undo_irrelevant string|false
+---@field quickfix string|false
+---@field note string|false
+
+---@class TaskbufferTaskfileKeymaps
+---@field start_task string|false
+---@field go_to_file string|false
+---@field partial string|false
+---@field irrelevant string|false
+---@field undo_irrelevant string|false
+---@field filter_tags string|false
+---@field reset_filters string|false
+---@field toggle_markers string|false
+---@field toggle_undated string|false
+---@field shift_date_back string|false
+---@field shift_date_forward string|false
+
+---@class TaskbufferMarkdownKeymaps
+---@field shift_date_back string|false
+---@field shift_date_forward string|false
+
+---@class TaskbufferKeymaps
+---@field global TaskbufferGlobalKeymaps
+---@field taskfile TaskbufferTaskfileKeymaps
+---@field markdown TaskbufferMarkdownKeymaps
+
+---@class TaskbufferInbox
+---@field file string path to inbox markdown file
+---@field header string|nil optional heading to insert below
+
+---@class TaskbufferConfig
+---@field task_bin string path to the Go binary
+---@field state_dir string directory for task state files
+---@field tmpdir string directory for temporary taskfile output
+---@field show_undated boolean whether to show undated tasks by default
+---@field sources string[] directories or glob patterns to scan
+---@field inbox TaskbufferInbox default location for new tasks
+---@field formats TaskbufferFormats task syntax formats
+---@field keymaps TaskbufferKeymaps keymap bindings
+
+---@class TaskbufferConfigModule
+---@field defaults TaskbufferConfig
+---@field values TaskbufferConfig
 local M = {}
 
 -- Auto-detect plugin root from this file's location
 local script_path = debug.getinfo(1, "S").source:sub(2)
 local plugin_root = vim.fn.fnamemodify(script_path, ":h:h:h")
 
+---@type TaskbufferConfig
 M.defaults = {
     task_bin = plugin_root .. "/go/task_bin",
     state_dir = "~/.local/state/task",
@@ -63,10 +126,14 @@ M.defaults = {
 }
 
 --- Current resolved config values; populated by apply().
+---@type TaskbufferConfig
 M.values = vim.deepcopy(M.defaults)
 
 --- Deep merge that preserves `false` values (vim.tbl_deep_extend treats false as truthy
 --- and would keep it, but we want explicit control).
+---@param base table
+---@param override table
+---@return table
 local function deep_merge(base, override)
     local result = {}
     for k, v in pairs(base) do
@@ -83,6 +150,8 @@ local function deep_merge(base, override)
 end
 
 --- Expand ~ in a string path.
+---@param p any
+---@return any
 local function expand_path(p)
     if type(p) ~= "string" then
         return p
@@ -91,6 +160,7 @@ local function expand_path(p)
 end
 
 --- Expand paths in the config that represent filesystem locations.
+---@param cfg TaskbufferConfig
 local function expand_config_paths(cfg)
     cfg.task_bin = expand_path(cfg.task_bin)
     cfg.state_dir = expand_path(cfg.state_dir)
@@ -106,6 +176,7 @@ local function expand_config_paths(cfg)
 end
 
 --- Merge user options into defaults and expand paths.
+---@param opts TaskbufferConfig|nil
 function M.apply(opts)
     opts = opts or {}
 
@@ -123,6 +194,7 @@ function M.apply(opts)
 end
 
 --- Build the CLI args for source directories.
+---@return string[]
 function M.source_args()
     local args = {}
     for _, src in ipairs(M.values.sources) do
@@ -133,6 +205,7 @@ function M.source_args()
 end
 
 --- Build the --config JSON arg for format/state config.
+---@return string
 function M.config_json_arg()
     local cfg = {
         state_dir = M.values.state_dir,

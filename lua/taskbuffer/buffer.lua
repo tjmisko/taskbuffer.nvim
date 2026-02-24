@@ -1,10 +1,13 @@
 local M = {}
 
+---@type string[]
 local active_tag_filter = {}
 local show_markers = false
+---@type boolean|nil
 local show_undated = nil
 local refreshing = false
 
+---@param tags string[]|nil
 function M.set_tag_filter(tags)
     active_tag_filter = tags or {}
 end
@@ -13,26 +16,32 @@ function M.clear_tag_filter()
     active_tag_filter = {}
 end
 
+---@return string[]
 function M.get_tag_filter()
     return active_tag_filter
 end
 
+---@param val boolean
 function M.set_refreshing(val)
     refreshing = val
 end
 
+---@return boolean
 function M.get_refreshing()
     return refreshing
 end
 
+---@return boolean
 function M.get_show_markers()
     return show_markers
 end
 
+---@param val boolean
 function M.set_show_markers(val)
     show_markers = val
 end
 
+---@return boolean
 function M.get_show_undated()
     if show_undated == nil then
         show_undated = require("taskbuffer.config").values.show_undated
@@ -40,10 +49,12 @@ function M.get_show_undated()
     return show_undated
 end
 
+---@param val boolean
 function M.set_show_undated(val)
     show_undated = val
 end
 
+--- Run the Go binary to regenerate the taskfile on disk.
 function M.refresh_taskfile()
     local config = require("taskbuffer.config")
     local cfg = config.values
