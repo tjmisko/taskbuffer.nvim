@@ -18,9 +18,9 @@ A neovim plugin for managing tasks defined inline in plain-text markdown notes.
 
 ## Requirements
 
-- Neovim 0.9+
+- **Neovim >= 0.10**
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH
-- Go 1.21+ (for building the binary)
+- [Go](https://go.dev/) >= 1.21 (for building the binary)
 - Optional: [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (for tag filtering)
 
 ## Installation
@@ -39,6 +39,12 @@ A neovim plugin for managing tasks defined inline in plain-text markdown notes.
 }
 ```
 
+If your package manager doesn't support a `build` hook, build manually:
+
+```bash
+cd ~/.local/share/nvim/lazy/taskbuffer.nvim/go && go build -o task_bin .
+```
+
 ### packer.nvim
 
 ```lua
@@ -53,7 +59,7 @@ use {
 
 ## Configuration
 
-All options with their defaults:
+All options with their defaults — see `:help taskbuffer-configuration` for full details:
 
 ```lua
 require("taskbuffer").setup({
@@ -65,6 +71,9 @@ require("taskbuffer").setup({
 
     -- Temp directory for taskfile output
     tmpdir = "/tmp",
+
+    -- Whether to show undated tasks by default
+    show_undated = true,
 
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Documents/Notes" },
@@ -106,6 +115,7 @@ require("taskbuffer").setup({
             filter_tags        = "#",
             reset_filters      = "<leader>tt",
             toggle_markers     = "<leader>tj",
+            toggle_undated     = "<leader>ts",
             shift_date_back    = "<M-Left>",
             shift_date_forward = "<M-Right>",
         },
@@ -172,6 +182,7 @@ Full example:
 |---------|-------------|
 | `:Tasks` | Open the taskfile buffer |
 | `:TasksClear` | Clear tag filters and refresh |
+| `:TasksUndated` | Open taskfile with undated tasks visible |
 
 ### CLI Commands
 
@@ -226,6 +237,7 @@ task --config '{"state_dir":"/tmp/state"}' current
 | Filter tags | `#` | Open Telescope tag picker |
 | Reset filters | `<leader>tt` | Clear all filters |
 | Toggle markers | `<leader>tj` | Show/hide `::` markers |
+| Toggle undated | `<leader>ts` | Show/hide undated tasks |
 | Shift date back | `<M-Left>` | Move due date earlier |
 | Shift date forward | `<M-Right>` | Move due date later |
 
@@ -239,12 +251,26 @@ task --config '{"state_dir":"/tmp/state"}' current
 ## Architecture
 
 ```
-Markdown files ──rg --json──▶ Go binary ──parse──▶ Task structs ──format──▶ .taskfile
-                                                                              │
-Neovim ◀── buffer.lua reads .taskfile ◀────────────────────────────────────────┘
+Markdown files ──rg --json──> Go binary ──parse──> Task structs ──format──> .taskfile
+                                                                              |
+Neovim <── buffer.lua reads .taskfile <────────────────────────────────────────┘
          keymaps.lua calls Go binary for mutations (defer, irrelevant, etc.)
 ```
 
 **Go binary** (`go/`): Scanning (`scan.go`), parsing (`parse.go`), formatting (`format.go`), file mutation (`mutate.go`), timer state (`state.go`), frontmatter parsing (`frontmatter.go`).
 
-**Lua plugin** (`lua/taskbuffer/`): Config and setup (`init.lua`), buffer management (`buffer.lua`), keymaps (`keymaps.lua`), Telescope tag picker (`tags.lua`).
+**Lua plugin** (`lua/taskbuffer/`): Config (`config.lua`), setup and public API (`init.lua`), buffer management (`buffer.lua`), autocmds (`autocmds.lua`), keymaps (`keymaps.lua`), commands (`commands.lua`), Telescope tag picker (`tags.lua`), utilities (`util.lua`).
+
+## Contributing
+
+Bug reports and pull requests are welcome. Please include a minimal reproduction config — see `repro.lua` in the repo root, or run:
+
+```bash
+nvim -u repro.lua
+```
+
+See `:help taskbuffer` for full documentation.
+
+## License
+
+[MIT](LICENSE)
