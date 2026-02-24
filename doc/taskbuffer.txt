@@ -1,0 +1,254 @@
+*taskbuffer.txt*  Manage tasks from plain-text markdown notes
+
+Author:   Tyler Misko
+License:  MIT
+Homepage: https://github.com/tjmisko/taskbuffer.nvim
+
+==============================================================================
+CONTENTS                                              *taskbuffer-contents*
+
+  1. Introduction ............................ |taskbuffer-introduction|
+  2. Requirements ............................ |taskbuffer-requirements|
+  3. Installation ............................ |taskbuffer-installation|
+  4. Configuration ........................... |taskbuffer-configuration|
+  5. Commands ................................ |taskbuffer-commands|
+  6. Keybindings ............................. |taskbuffer-keybindings|
+  7. Task syntax ............................. |taskbuffer-syntax|
+  8. Public API .............................. |taskbuffer-api|
+
+==============================================================================
+1. INTRODUCTION                                   *taskbuffer-introduction*
+
+taskbuffer.nvim is a Neovim plugin for managing a personal task and
+time-tracking system built on Obsidian-style markdown notes. Tasks are
+defined inline in `.md` files using a specific syntax, scanned with
+ripgrep, parsed in Go, and displayed in a custom read-only taskfile buffer
+bucketed by date interval (Overdue, Today, Tomorrow, This Week, etc.).
+
+==============================================================================
+2. REQUIREMENTS                                   *taskbuffer-requirements*
+
+- Neovim >= 0.10
+- Go >= 1.21 (for building the binary)
+- ripgrep (`rg`) on PATH
+- Optional: telescope.nvim (for tag filtering)
+
+==============================================================================
+3. INSTALLATION                                   *taskbuffer-installation*
+
+lazy.nvim ~
+>lua
+  {
+      "tjmisko/taskbuffer.nvim",
+      build = "cd go && go build -o task_bin .",
+      config = function()
+          require("taskbuffer").setup({
+              -- your overrides here
+          })
+      end,
+  }
+<
+
+packer.nvim ~
+>lua
+  use {
+      "tjmisko/taskbuffer.nvim",
+      run = "cd go && go build -o task_bin .",
+      config = function()
+          require("taskbuffer").setup()
+      end,
+  }
+<
+
+==============================================================================
+4. CONFIGURATION                                 *taskbuffer-configuration*
+
+Call `require("taskbuffer").setup(opts)` with a table of options. Any
+option not specified falls back to its default value.
+
+                                                   *taskbuffer-config-opts*
+>lua
+  require("taskbuffer").setup({
+      -- Path to the compiled Go binary (auto-detected)
+      task_bin = "<plugin_root>/go/task_bin",
+
+      -- State directory for current task tracking
+      state_dir = "~/.local/state/task",
+
+      -- Temp directory for taskfile output
+      tmpdir = "/tmp",
+
+      -- Whether to show undated tasks by default
+      show_undated = true,
+
+      -- Task sources: directories (recursive) or glob patterns
+      sources = { "~/Documents/Notes" },
+
+      -- Default location for new tasks via `task create`
+      inbox = {
+          file = "~/Documents/Notes/inbox.md",
+          header = nil,  -- e.g. "## Tasks"
+      },
+
+      -- Task syntax formats (passed to Go binary)
+      formats = {
+          date = "%Y-%m-%d",
+          time = "%H:%M",
+          duration = "<{n}m>",
+          tag_prefix = "#",
+          checkbox = {
+              open = "- [ ]",
+              done = "- [x]",
+              irrelevant = "- [-]",
+          },
+          date_wrapper = { "(@[[", "]])" },
+          marker_prefix = "::",
+      },
+
+      -- Keymaps: set any to false to disable
+      keymaps = {
+          global = {
+              complete        = "<leader>tc",
+              defer           = "<leader>td",
+              check_off       = "<leader>tx",
+              irrelevant      = "<leader>ti",
+              undo_irrelevant = "<leader>tu",
+              quickfix        = "<M-C-q>",
+              note            = "<leader>ev",
+          },
+          taskfile = {
+              start_task         = "<leader>tb",
+              go_to_file         = "gf",
+              partial            = "<leader>tp",
+              irrelevant         = "<leader>ti",
+              undo_irrelevant    = "<leader>tu",
+              filter_tags        = "#",
+              reset_filters      = "<leader>tt",
+              toggle_markers     = "<leader>tj",
+              toggle_undated     = "<leader>ts",
+              shift_date_back    = "<M-Left>",
+              shift_date_forward = "<M-Right>",
+          },
+          markdown = {
+              shift_date_back    = "<M-Left>",
+              shift_date_forward = "<M-Right>",
+          },
+      },
+  })
+<
+
+To disable a keymap, set it to `false`: >lua
+  keymaps = { global = { note = false } }
+<
+
+==============================================================================
+5. COMMANDS                                         *taskbuffer-commands*
+
+                                                                   *:Tasks*
+:Tasks                  Open the taskfile buffer. Clears any active tag
+                        filter and refreshes the task list.
+
+                                                              *:TasksClear*
+:TasksClear             Clear tag filters and refresh the taskfile.
+
+                                                             *:TasksUndated*
+:TasksUndated           Open the taskfile buffer with undated tasks visible,
+                        regardless of the `show_undated` config setting.
+
+==============================================================================
+6. KEYBINDINGS                                     *taskbuffer-keybindings*
+
+All keymaps can be customized or disabled via the `keymaps` config table.
+
+Global (all filetypes) ~
+
+  Key               Action ~
+  `<leader>tc`        Mark task on current line as complete
+  `<leader>td`        Defer task on current line
+  `<leader>tx`        Quick check-off (no marker)
+  `<leader>ti`        Mark task irrelevant
+  `<leader>tu`        Undo irrelevant/partial
+  `<M-C-q>`           Send visual selection to quickfix
+  `<leader>ev`        Insert a dated note entry
+
+Taskfile buffer ~
+
+  Key               Action ~
+  `<leader>tb`        Start timer for task under cursor
+  `gf`                Jump to source file location
+  `<CR>`              Jump to source file location
+  `<leader>tp`        Mark task partial
+  `<leader>ti`        Mark task irrelevant
+  `<leader>tu`        Undo irrelevant/partial
+  `#`                 Open Telescope tag picker
+  `<leader>tt`        Clear all filters
+  `<leader>tj`        Show/hide `::` markers
+  `<leader>ts`        Toggle undated task visibility
+  `<M-Left>`          Move due date earlier (accepts count)
+  `<M-Right>`         Move due date later (accepts count)
+
+Markdown files ~
+
+  Key               Action ~
+  `<M-Left>`          Move due date earlier (accepts count)
+  `<M-Right>`         Move due date later (accepts count)
+
+==============================================================================
+7. TASK SYNTAX                                       *taskbuffer-syntax*
+
+Tasks are standard markdown checkboxes with optional metadata:
+>
+  - [ ] Task body <30m> #tag (@[[2026-02-17]] 16:00)
+<
+
+  Component     Format                      Required ~
+  Checkbox      `- [ ]`, `- [x]`, `- [-]`    Yes
+  Body          Free text                   Yes
+  Duration      `<Nm>` (e.g. `<30m>`)         No
+  Tags          `#tag-name`                   No
+  Due date      `(@[[YYYY-MM-DD]])`           No
+  Due time      `(@[[YYYY-MM-DD]] HH:MM)`    No
+
+Markers ~
+
+Markers are appended to task lines to track state changes:
+
+  Marker                          Meaning ~
+  `::start [[DATE]] TIME`           Task timer started
+  `::stop [[DATE]] TIME`            Task timer stopped
+  `::complete [[DATE]] TIME`        Task completed
+  `::deferral [[DATE]] TIME`        Task deferred
+  `::original [[DATE]]`             Original due date (on first deferral)
+  `::irrelevant [[DATE]] TIME`      Marked irrelevant
+  `::partial [[DATE]] TIME`         Marked partial
+
+Full example: >
+  - [x] Write report <30m> #work (@[[2026-02-17]] 15:00) ::start [[2026-02-17]] 15:17 ::complete [[2026-02-17]] 17:19
+<
+
+==============================================================================
+8. PUBLIC API                                           *taskbuffer-api*
+
+                                                     *taskbuffer.setup()*
+taskbuffer.setup({opts})
+    Initialize the plugin with the given options. Registers autocmds and
+    keymaps. See |taskbuffer-configuration| for available options.
+
+                                                     *taskbuffer.tasks()*
+taskbuffer.tasks()
+    Open the taskfile buffer. Called by |:Tasks|.
+
+                                                *taskbuffer.tasks_clear()*
+taskbuffer.tasks_clear()
+    Clear tag filters and refresh. Called by |:TasksClear|.
+
+                                                *taskbuffer.source_args()*
+taskbuffer.source_args()
+    Returns a list of CLI arguments for `--source` flags.
+
+                                            *taskbuffer.config_json_arg()*
+taskbuffer.config_json_arg()
+    Returns the JSON-encoded config string for the Go binary.
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
