@@ -1,13 +1,13 @@
 local M = {}
 
+---@type string[]
 local active_tag_filter = {}
 local show_markers = false
+---@type boolean|nil
 local show_undated = nil
 local refreshing = false
-local autocmds_registered = false
 
-local augroup = vim.api.nvim_create_augroup("TaskBufferAutoCmd", { clear = true })
-
+---@param tags string[]|nil
 function M.set_tag_filter(tags)
     active_tag_filter = tags or {}
 end
@@ -16,46 +16,58 @@ function M.clear_tag_filter()
     active_tag_filter = {}
 end
 
+---@return string[]
 function M.get_tag_filter()
     return active_tag_filter
 end
 
+---@param val boolean
 function M.set_refreshing(val)
     refreshing = val
 end
 
+---@return boolean
+function M.get_refreshing()
+    return refreshing
+end
+
+---@return boolean
 function M.get_show_markers()
     return show_markers
 end
 
+---@param val boolean
 function M.set_show_markers(val)
     show_markers = val
 end
 
+---@return boolean
 function M.get_show_undated()
     if show_undated == nil then
-        show_undated = require("taskbuffer").config.show_undated
+        show_undated = require("taskbuffer.config").values.show_undated
     end
     return show_undated
 end
 
+---@param val boolean
 function M.set_show_undated(val)
     show_undated = val
 end
 
+--- Run the Go binary to regenerate the taskfile on disk.
 function M.refresh_taskfile()
-    local tb = require("taskbuffer")
-    local config = tb.config
-    local cmd = { config.task_bin }
+    local config = require("taskbuffer.config")
+    local cfg = config.values
+    local cmd = { cfg.task_bin }
 
     -- Pass source directories
-    for _, arg in ipairs(tb.source_args()) do
+    for _, arg in ipairs(config.source_args()) do
         table.insert(cmd, arg)
     end
 
     -- Pass config JSON
     table.insert(cmd, "--config")
-    table.insert(cmd, tb.config_json_arg())
+    table.insert(cmd, config.config_json_arg())
 
     table.insert(cmd, "list")
 
@@ -72,63 +84,31 @@ function M.refresh_taskfile()
 
     local result = vim.system(cmd, { text = true }):wait()
     if result.code ~= 0 then
-        vim.notify("task list failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
+        vim.notify("[taskbuffer] task list failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
         return
     end
 
-    local filepath = config.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
-    local f = assert(io.open(filepath, "w"))
+    local filepath = cfg.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
+    local f, err = io.open(filepath, "w")
+    if not f then
+        vim.notify("[taskbuffer] failed to write taskfile: " .. err, vim.log.levels.ERROR)
+        return
+    end
     f:write(result.stdout)
     f:close()
 end
 
-local function discard_changes()
-    if vim.bo.modified then
-        vim.bo.modified = false
-    end
-end
-
+--- Delegate to autocmds module for backward compat.
 function M.setup_autocmds()
-    if autocmds_registered then
-        return
-    end
-    autocmds_registered = true
-
-    -- Discard changes on buffer leave
-    vim.api.nvim_create_autocmd({ "BufLeave", "QuitPre" }, {
-        group = augroup,
-        pattern = "*taskfile",
-        callback = discard_changes,
-    })
-
-    -- Refresh on BufEnter
-    vim.api.nvim_create_autocmd({ "BufEnter" }, {
-        group = augroup,
-        pattern = "*taskfile",
-        callback = function()
-            local buf = vim.api.nvim_get_current_buf()
-            vim.api.nvim_set_option_value("readonly", true, { buf = buf })
-            if refreshing then
-                return
-            end
-            refreshing = true
-            M.refresh_taskfile()
-            vim.cmd("edit!")
-            refreshing = false
-            -- Reset cursor to beginning of line; conceal groups cause the
-            -- restored column to land far past visible content.
-            local row = vim.api.nvim_win_get_cursor(0)[1]
-            vim.api.nvim_win_set_cursor(0, { row, 0 })
-        end,
-    })
+    require("taskbuffer.autocmds").register()
 end
 
 function M.tasks()
     M.clear_tag_filter()
     refreshing = true
     M.refresh_taskfile()
-    local config = require("taskbuffer").config
-    local filepath = config.tmpdir .. "/" .. vim.fn.strftime("%F") .. ".taskfile"
+    local cfg = require("taskbuffer.config").values
+    local filepath = cfg.tmpdir .. "/" .. vim.fn.strftime("%F") .. ".taskfile"
     vim.cmd("edit! " .. filepath)
     vim.bo.readonly = true
     refreshing = false
@@ -141,7 +121,7 @@ function M.tasks_clear()
     vim.cmd("edit!")
     vim.bo.readonly = true
     refreshing = false
-    vim.notify("Tag filter cleared", vim.log.levels.INFO)
+    vim.notify("[taskbuffer] tag filter cleared", vim.log.levels.INFO)
 end
 
 return M
