@@ -13,18 +13,18 @@ function M.setup(opts)
     config.apply(opts)
     M.config = config.values
 
-    require("taskbuffer.buffer").setup_autocmds()
+    require("taskbuffer.autocmds").register()
     require("taskbuffer.keymaps").setup_keymaps()
 end
 
 function M.tasks()
-    require("taskbuffer.buffer").setup_autocmds()
+    require("taskbuffer.autocmds").register()
     require("taskbuffer.keymaps").setup_keymaps()
     require("taskbuffer.buffer").tasks()
 end
 
 function M.tasks_clear()
-    require("taskbuffer.buffer").setup_autocmds()
+    require("taskbuffer.autocmds").register()
     require("taskbuffer.keymaps").setup_keymaps()
     require("taskbuffer.buffer").tasks_clear()
 end
