@@ -11,6 +11,21 @@ function M.parse_taskfile_line(line)
     return filepath, linenumber
 end
 
+--- Read a specific line from a file on disk.
+---@param path string
+---@param target integer
+---@return string|nil
+function M.read_line_from_file(path, target)
+    local i = 0
+    for l in io.lines(path) do
+        i = i + 1
+        if i == target then
+            return l
+        end
+    end
+    return nil
+end
+
 --- Replace a single line in a file on disk.
 ---@param path string
 ---@param target_line integer
