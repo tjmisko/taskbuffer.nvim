@@ -54,6 +54,17 @@ function M.set_show_undated(val)
     show_undated = val
 end
 
+--- Refresh the taskfile and restore the cursor to its previous position.
+function M.refresh_and_restore_cursor()
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    M.set_refreshing(true)
+    M.refresh_taskfile()
+    vim.cmd("edit!")
+    vim.bo.readonly = true
+    M.set_refreshing(false)
+    pcall(vim.api.nvim_win_set_cursor, 0, cursor)
+end
+
 --- Run the Go binary to regenerate the taskfile on disk.
 function M.refresh_taskfile()
     local config = require("taskbuffer.config")
