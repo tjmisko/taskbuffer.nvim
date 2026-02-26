@@ -89,7 +89,7 @@ M.defaults = {
         time = "%H:%M",
         duration = "<{n}m>",
         tag_prefix = "#",
-        checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]" },
+        checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]", partial = "- [~]" },
         date_wrapper = { "(@[[", "]])" },
         marker_prefix = "::",
     },

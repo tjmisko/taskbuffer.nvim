@@ -18,13 +18,15 @@ func mustDatePtr(s string) *time.Time {
 	return &t
 }
 
+var defaultCtx = DefaultParseContext()
+
 func TestParseTask_Simple(t *testing.T) {
 	m := RawMatch{
 		Path:       "/notes/test.md",
 		LineNumber: 5,
 		Text:       "- [ ] Buy groceries (@[[2026-02-17]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +59,7 @@ func TestParseTask_WithTime(t *testing.T) {
 		LineNumber: 10,
 		Text:       "- [ ] Team meeting (@[[2026-02-17]] 16:00)",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +77,7 @@ func TestParseTask_WithDuration(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Meeting with Professor <90m> (@[[2026-02-17]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +95,7 @@ func TestParseTask_WithTags(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Run 5k #exercise #target (@[[2026-02-17]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +113,7 @@ func TestParseTask_WithMarkers(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Some task (@[[2026-01-21]])::original [[2026-01-14]] ::deferral [[2026-01-21]] 12:03",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +134,7 @@ func TestParseTask_StartStop(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [x] Write report (@[[2026-01-14]]) ::start [[2026-01-14]] 15:58 ::stop [[2026-01-14]] 16:40",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +158,7 @@ func TestParseTask_Indented(t *testing.T) {
 		LineNumber: 1,
 		Text:       "\t- [ ] Indented task (@[[2026-02-17]])\n",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +173,7 @@ func TestParseTask_WikiLinksInBody(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Visit [[The Commons]] for lunch (@[[2026-02-17]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +188,7 @@ func TestParseTask_AliasDate(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Aliased task (@[[1749970209-GXKH|2025-06-15]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +203,7 @@ func TestParseTask_PathPrefixDate(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Path prefix task (@[[daily/2025-06-13]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +219,7 @@ func TestParseTask_EmptyDate(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Broken task (@[[]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +237,7 @@ func TestParseTask_NoSpaceMarkers(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [x] Buy screws (@[[2026-01-28]]) #fish-tank::complete [[2026-01-29]] 09:16",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +255,7 @@ func TestParseTask_FullComplex(t *testing.T) {
 		LineNumber: 42,
 		Text:       "- [x] Rewrite About Me Section <30m> (@[[2026-01-23]] 15:00) ::start [[2026-01-23]] 15:17::complete [[2026-01-23]] 17:19",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +291,7 @@ func TestParseTask_IrrelevantStatus(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [-] Cancelled task (@[[2024-11-25]])",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +306,7 @@ func TestParseTasks_SkipsUnparseable(t *testing.T) {
 		{Path: "b.md", LineNumber: 2, Text: "not a task line at all"},
 		{Path: "c.md", LineNumber: 3, Text: "- [ ] Also good (@[[2026-02-18]])"},
 	}
-	tasks := ParseTasks(matches)
+	tasks := ParseTasks(matches, defaultCtx)
 	if len(tasks) != 2 {
 		t.Errorf("got %d tasks, want 2", len(tasks))
 	}
@@ -316,7 +318,7 @@ func TestParseTask_MarkerWithPathPrefixDate(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [x] Backend docs <60m> (@[[2025-05-31]])::complete [[daily/2025-06-13]] 08:50",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +336,7 @@ func TestParseTask_Undated(t *testing.T) {
 		LineNumber: 3,
 		Text:       "- [ ] Investigate OOM Kill Root Cause",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +360,7 @@ func TestParseTask_UndatedWithTags(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Fix memory leak #backend #urgent",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +381,7 @@ func TestParseTask_UndatedWithDuration(t *testing.T) {
 		LineNumber: 1,
 		Text:       "- [ ] Research caching strategies <60m>",
 	}
-	task, err := ParseTask(m)
+	task, err := ParseTask(m, defaultCtx)
 	if err != nil {
 		t.Fatal(err)
 	}
