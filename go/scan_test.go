@@ -43,7 +43,7 @@ func TestScan_FindsTasksInTempDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	matches, err := Scan(dir)
+	matches, err := Scan(nil, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestScan_FindsTasksInTempDir(t *testing.T) {
 
 func TestScan_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	matches, err := Scan(dir)
+	matches, err := Scan(nil, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestScan_NoMatchesInFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	matches, err := Scan(dir)
+	matches, err := Scan(nil, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

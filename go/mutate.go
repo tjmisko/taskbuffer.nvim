@@ -22,13 +22,24 @@ func AppendToLine(filePath string, lineNumber int, text string) error {
 	return os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0644)
 }
 
-// CheckOffTask changes `- [ ]` to `- [x]` on a specific line.
+// CheckOffTask changes `- [ ]` to `- [x]` on a specific line (uses default checkboxes).
 func CheckOffTask(filePath string, lineNumber int) error {
 	return ChangeCheckbox(filePath, lineNumber, "- [ ]", "- [x]")
 }
 
+// CheckOffTaskWith changes the checkbox from `from` to `to` on a specific line.
+func CheckOffTaskWith(filePath string, lineNumber int, from, to string) error {
+	return ChangeCheckbox(filePath, lineNumber, from, to)
+}
+
 // ChangeCheckbox replaces one checkbox state with another on a specific line.
 func ChangeCheckbox(filePath string, lineNumber int, from, to string) error {
+	if from == "" {
+		return fmt.Errorf("ChangeCheckbox: empty 'from' checkbox string")
+	}
+	if to == "" {
+		return fmt.Errorf("ChangeCheckbox: empty 'to' checkbox string")
+	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", filePath, err)

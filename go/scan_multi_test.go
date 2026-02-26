@@ -13,7 +13,7 @@ func TestScan_MultipleDirs(t *testing.T) {
 	os.WriteFile(filepath.Join(dir1, "a.md"), []byte("- [ ] Task in dir1 (@[[2026-02-17]])\n"), 0644)
 	os.WriteFile(filepath.Join(dir2, "b.md"), []byte("- [ ] Task in dir2 (@[[2026-02-18]])\n"), 0644)
 
-	matches, err := Scan(dir1, dir2)
+	matches, err := Scan(nil, dir1, dir2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestScan_GlobExpansion(t *testing.T) {
 
 	// Use glob pattern
 	pattern := filepath.Join(dir, "note*")
-	matches, err := Scan(pattern)
+	matches, err := Scan(nil, pattern)
 	if err != nil {
 		t.Fatal(err)
 	}

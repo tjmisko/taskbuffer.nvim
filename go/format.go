@@ -34,9 +34,11 @@ func inBucket(date time.Time, idx int, buckets []dateBucket) bool {
 }
 
 type FormatOpts struct {
-	ShowMarkers  bool
+	ShowMarkers   bool
 	IgnoreUndated bool
-	TagFilter    []string // only show tasks matching these tags (OR logic)
+	TagFilter     []string // only show tasks matching these tags (OR logic)
+	TagPrefix     string   // prefix for tag display (default "#")
+	MarkerPrefix  string   // prefix for marker display (default "::")
 }
 
 func formatTaskLine(t Task, opts FormatOpts) string {
@@ -75,20 +77,28 @@ func formatTaskLine(t Task, opts FormatOpts) string {
 
 	// Tags (before markers, after body tab)
 	if len(t.Tags) > 0 {
+		prefix := opts.TagPrefix
+		if prefix == "" {
+			prefix = "#"
+		}
 		b.WriteString(" ")
 		for i, tag := range t.Tags {
 			if i > 0 {
 				b.WriteString(" ")
 			}
-			b.WriteString("#")
+			b.WriteString(prefix)
 			b.WriteString(tag)
 		}
 	}
 
 	// Markers
 	if opts.ShowMarkers {
+		markerPrefix := opts.MarkerPrefix
+		if markerPrefix == "" {
+			markerPrefix = "::"
+		}
 		for _, m := range t.Markers {
-			fmt.Fprintf(&b, " ::%s [[%s]]", m.Kind, m.Date)
+			fmt.Fprintf(&b, " %s%s [[%s]]", markerPrefix, m.Kind, m.Date)
 			if m.Time != "" {
 				fmt.Fprintf(&b, " %s", m.Time)
 			}

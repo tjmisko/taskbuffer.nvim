@@ -18,7 +18,7 @@ type RawMatch struct {
 	Text       string
 }
 
-const scanPattern = `\- \[.\]`
+const defaultScanPattern = `\- \[.\]`
 
 type rgMessage struct {
 	Type string `json:"type"`
@@ -83,13 +83,19 @@ func expandGlobs(paths []string) []string {
 }
 
 // Scan searches one or more directories for task lines using ripgrep.
-func Scan(notesPaths ...string) ([]RawMatch, error) {
+// If ctx is non-nil, its scanPattern is used; otherwise the default pattern is used.
+func Scan(ctx *ParseContext, notesPaths ...string) ([]RawMatch, error) {
 	paths := expandGlobs(notesPaths)
 	if len(paths) == 0 {
 		return nil, nil
 	}
 
-	args := []string{"--json", "-e", scanPattern}
+	pattern := defaultScanPattern
+	if ctx != nil && ctx.scanPattern != "" {
+		pattern = ctx.scanPattern
+	}
+
+	args := []string{"--json", "-e", pattern}
 	args = append(args, paths...)
 	cmd := exec.Command("rg", args...)
 

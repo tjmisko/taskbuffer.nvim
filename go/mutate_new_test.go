@@ -189,7 +189,7 @@ func TestCmdIrrelevant(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [ ] Irrelevant task (@[[2026-02-17]])\n"), 0644)
 
-	err := cmdIrrelevant([]string{path, "1"})
+	err := cmdIrrelevant(DefaultParseContext(), []string{path, "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestCmdUnset_Irrelevant(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [-] Task (@[[2026-02-17]]) ::irrelevant [[2026-02-18]] 10:00\n"), 0644)
 
-	err := cmdUnset([]string{path, "1"})
+	err := cmdUnset(DefaultParseContext(), []string{path, "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestCmdUnset_Partial(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [~] Task (@[[2026-02-17]]) ::partial [[2026-02-18]] 10:00\n"), 0644)
 
-	err := cmdUnset([]string{path, "1"})
+	err := cmdUnset(DefaultParseContext(), []string{path, "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestCmdCreate_AppendToFile(t *testing.T) {
 	path := filepath.Join(dir, "inbox.md")
 	os.WriteFile(path, []byte("# Inbox\n"), 0644)
 
-	err := cmdCreate([]string{"--file", path, "Test task body"})
+	err := cmdCreate(DefaultParseContext(), []string{"--file", path, "Test task body"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestCmdCreate_InsertAfterHeader(t *testing.T) {
 	path := filepath.Join(dir, "inbox.md")
 	os.WriteFile(path, []byte("# Notes\nSome text\n\n## Tasks\n- [ ] Existing task\n\n## Other\n"), 0644)
 
-	err := cmdCreate([]string{"--file", path, "--header", "## Tasks", "New task here"})
+	err := cmdCreate(DefaultParseContext(), []string{"--file", path, "--header", "## Tasks", "New task here"})
 	if err != nil {
 		t.Fatal(err)
 	}
