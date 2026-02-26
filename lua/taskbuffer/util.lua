@@ -76,7 +76,21 @@ function M.shift_date_in_string(line, days)
     return prefix .. new_date .. suffix, new_date
 end
 
+--- Replace the due date in a task line string with today's date.
+---@param line string
+---@return string|nil new_line
+---@return string|nil new_date
+function M.set_date_today_in_string(line)
+    local prefix, _, _, _, suffix = line:match("^(.-%(@%[%[)(%d%d%d%d)%-(%d%d)%-(%d%d)(%]%].*)$")
+    if not prefix then
+        return nil, nil
+    end
+    local today = os.date("%Y-%m-%d")
+    return prefix .. today .. suffix, today
+end
+
 --- Get the visual selection as a list of lines.
+--- Uses '</'> marks; only valid after visual mode exits.
 ---@return string[]
 function M.get_visual_selection()
     local s_mark = vim.api.nvim_buf_get_mark(0, "<")
@@ -103,6 +117,34 @@ function M.get_visual_selection()
     return lines
 end
 
+--- Get visually selected lines using live cursor positions.
+--- Works during visual mode (before marks are set).
+---@return string[]
+function M.get_visual_lines()
+    local v_pos = vim.fn.getpos("v")
+    local c_pos = vim.fn.getpos(".")
+    local s_line = math.min(v_pos[2], c_pos[2])
+    local e_line = math.max(v_pos[2], c_pos[2])
+    if s_line == 0 or e_line == 0 then
+        return {}
+    end
+    return vim.api.nvim_buf_get_lines(0, s_line - 1, e_line, false)
+end
+
+--- Parse taskfile lines into quickfix entries.
+---@param lines string[]
+---@return table[] qf_list
+function M.taskfile_lines_to_qf(lines)
+    local qf_list = {}
+    for _, line in ipairs(lines) do
+        local filename, lnum, _, text = string.match(line, "^(.-):(.-):(.-):(.*)$")
+        if filename and lnum then
+            table.insert(qf_list, { filename = filename, lnum = tonumber(lnum), text = text })
+        end
+    end
+    return qf_list
+end
+
 --- Run a Go binary command and optionally refresh the taskfile buffer.
 ---@param args string[]
 ---@param refresh boolean
@@ -119,14 +161,7 @@ function M.run_task_cmd(args, refresh)
         return false
     end
     if refresh then
-        local buffer = require("taskbuffer.buffer")
-        local cursor = vim.api.nvim_win_get_cursor(0)
-        buffer.set_refreshing(true)
-        buffer.refresh_taskfile()
-        vim.cmd("edit!")
-        vim.bo.readonly = true
-        buffer.set_refreshing(false)
-        pcall(vim.api.nvim_win_set_cursor, 0, cursor)
+        require("taskbuffer.buffer").refresh_and_restore_cursor()
     end
     return true
 end

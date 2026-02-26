@@ -18,7 +18,6 @@
 ---@field check_off string|false
 ---@field irrelevant string|false
 ---@field undo_irrelevant string|false
----@field quickfix string|false
 ---@field note string|false
 
 ---@class TaskbufferTaskfileKeymaps
@@ -33,10 +32,13 @@
 ---@field toggle_undated string|false
 ---@field shift_date_back string|false
 ---@field shift_date_forward string|false
+---@field set_date_today string|false
+---@field quickfix string|false
 
 ---@class TaskbufferMarkdownKeymaps
 ---@field shift_date_back string|false
 ---@field shift_date_forward string|false
+---@field set_date_today string|false
 
 ---@class TaskbufferKeymaps
 ---@field global TaskbufferGlobalKeymaps
@@ -102,7 +104,6 @@ M.defaults = {
             check_off = "<leader>tx",
             irrelevant = "<leader>ti",
             undo_irrelevant = "<leader>tu",
-            quickfix = "<M-C-q>",
             note = "<leader>ev",
         },
         taskfile = {
@@ -117,10 +118,13 @@ M.defaults = {
             toggle_undated = "<leader>ts",
             shift_date_back = "<M-Left>",
             shift_date_forward = "<M-Right>",
+            set_date_today = "<C-T>",
+            quickfix = "<M-C-q>",
         },
         markdown = {
             shift_date_back = "<M-Left>",
             shift_date_forward = "<M-Right>",
+            set_date_today = "<C-T>",
         },
     },
 }
