@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,6 +100,9 @@ func Scan(ctx *ParseContext, notesPaths ...string) ([]RawMatch, error) {
 	args = append(args, paths...)
 	cmd := exec.Command("rg", args...)
 
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("creating stdout pipe: %w", err)
@@ -136,8 +140,14 @@ func Scan(ctx *ParseContext, notesPaths ...string) ([]RawMatch, error) {
 
 	if err := cmd.Wait(); err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return nil, nil // no matches
+		if errors.As(err, &exitErr) {
+			code := exitErr.ExitCode()
+			if code == 1 {
+				return nil, nil // no matches
+			}
+			if code == 2 && stderrBuf.Len() == 0 {
+				return nil, nil // no searchable files (e.g. empty directory)
+			}
 		}
 		return nil, fmt.Errorf("rg exited with error: %w", err)
 	}
