@@ -68,7 +68,8 @@ local function shift_task_dates_bulk(lines, days)
                     if not edits_by_file[filepath] then
                         edits_by_file[filepath] = {}
                     end
-                    local edit = { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }
+                    local edit =
+                        { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }
                     table.insert(edits_by_file[filepath], edit)
                     all_edits[#all_edits + 1] = edit
                     shifted = shifted + 1
@@ -82,7 +83,9 @@ local function shift_task_dates_bulk(lines, days)
     end
     -- Apply edits per file, sorted by line number descending to avoid drift
     for _, edits in pairs(edits_by_file) do
-        table.sort(edits, function(a, b) return a.linenumber > b.linenumber end)
+        table.sort(edits, function(a, b)
+            return a.linenumber > b.linenumber
+        end)
         for _, edit in ipairs(edits) do
             util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
         end
@@ -91,7 +94,10 @@ local function shift_task_dates_bulk(lines, days)
     local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
     require("taskbuffer.undo").push({ op = op, edits = all_edits, timestamp = os.time() })
     buffer.refresh_and_restore_cursor()
-    vim.notify("[taskbuffer] shifted " .. shifted .. " task(s) " .. direction .. " " .. math.abs(days) .. " day(s)", vim.log.levels.INFO)
+    vim.notify(
+        "[taskbuffer] shifted " .. shifted .. " task(s) " .. direction .. " " .. math.abs(days) .. " day(s)",
+        vim.log.levels.INFO
+    )
 end
 
 --- Get filepath and linenumber from a taskfile line.
@@ -129,7 +135,7 @@ local function shift_task_date_in_taskfile(days)
     local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
     require("taskbuffer.undo").push({
         op = op,
-        edits = {{ filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }},
+        edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
         timestamp = os.time(),
     })
     buffer.refresh_and_restore_cursor()
@@ -153,7 +159,8 @@ local function set_task_dates_today_bulk(lines)
                     if not edits_by_file[filepath] then
                         edits_by_file[filepath] = {}
                     end
-                    local edit = { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }
+                    local edit =
+                        { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }
                     table.insert(edits_by_file[filepath], edit)
                     all_edits[#all_edits + 1] = edit
                     updated = updated + 1
@@ -166,7 +173,9 @@ local function set_task_dates_today_bulk(lines)
         return
     end
     for _, edits in pairs(edits_by_file) do
-        table.sort(edits, function(a, b) return a.linenumber > b.linenumber end)
+        table.sort(edits, function(a, b)
+            return a.linenumber > b.linenumber
+        end)
         for _, edit in ipairs(edits) do
             util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
         end
@@ -197,7 +206,7 @@ local function set_date_today_in_taskfile()
     util.replace_line_in_file(filepath, linenumber, new_line)
     require("taskbuffer.undo").push({
         op = "set today",
-        edits = {{ filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }},
+        edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
         timestamp = os.time(),
     })
     buffer.refresh_and_restore_cursor()
