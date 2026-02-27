@@ -65,23 +65,18 @@ function M.refresh_and_restore_cursor()
     pcall(vim.api.nvim_win_set_cursor, 0, cursor)
 end
 
---- Run the Go binary to regenerate the taskfile on disk.
-function M.refresh_taskfile()
+--- Build the command table for the Go CLI binary.
+---@return string[]
+local function build_cmd()
     local config = require("taskbuffer.config")
     local cfg = config.values
     local cmd = { cfg.task_bin }
-
-    -- Pass source directories
     for _, arg in ipairs(config.source_args()) do
         table.insert(cmd, arg)
     end
-
-    -- Pass config JSON
     table.insert(cmd, "--config")
     table.insert(cmd, config.config_json_arg())
-
     table.insert(cmd, "list")
-
     if show_markers then
         table.insert(cmd, "-markers")
     end
@@ -92,21 +87,53 @@ function M.refresh_taskfile()
         table.insert(cmd, "--tag")
         table.insert(cmd, tag)
     end
+    return cmd
+end
 
+--- Write stdout content to the taskfile on disk.
+---@param stdout string
+---@return boolean
+local function write_taskfile(stdout)
+    local cfg = require("taskbuffer.config").values
+    local filepath = cfg.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
+    local f, err = io.open(filepath, "w")
+    if not f then
+        vim.notify("[taskbuffer] failed to write taskfile: " .. err, vim.log.levels.ERROR)
+        return false
+    end
+    f:write(stdout)
+    f:close()
+    return true
+end
+
+--- Run the Go binary synchronously to regenerate the taskfile on disk.
+function M.refresh_taskfile()
+    local cmd = build_cmd()
     local result = vim.system(cmd, { text = true }):wait()
     if result.code ~= 0 then
         vim.notify("[taskbuffer] task list failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
         return
     end
+    write_taskfile(result.stdout)
+end
 
-    local filepath = cfg.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
-    local f, err = io.open(filepath, "w")
-    if not f then
-        vim.notify("[taskbuffer] failed to write taskfile: " .. err, vim.log.levels.ERROR)
-        return
-    end
-    f:write(result.stdout)
-    f:close()
+--- Run the Go binary asynchronously and invoke callback on completion.
+---@param callback fun()
+function M.refresh_taskfile_async(callback)
+    local cmd = build_cmd()
+    vim.system(cmd, { text = true }, function(result)
+        if result.code ~= 0 then
+            vim.schedule(function()
+                vim.notify("[taskbuffer] task list failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
+                refreshing = false
+            end)
+            return
+        end
+        vim.schedule(function()
+            write_taskfile(result.stdout)
+            callback()
+        end)
+    end)
 end
 
 --- Delegate to autocmds module for backward compat.
@@ -116,22 +143,46 @@ end
 
 function M.tasks()
     M.clear_tag_filter()
-    refreshing = true
-    M.refresh_taskfile()
     local cfg = require("taskbuffer.config").values
     local filepath = cfg.tmpdir .. "/" .. vim.fn.strftime("%F") .. ".taskfile"
-    vim.cmd("edit! " .. filepath)
-    vim.bo.readonly = true
-    refreshing = false
+    if vim.uv.fs_stat(filepath) then
+        vim.cmd("edit! " .. filepath)
+        vim.bo.readonly = true
+        refreshing = true
+        M.refresh_taskfile_async(function()
+            vim.cmd("edit!")
+            vim.bo.readonly = true
+            refreshing = false
+        end)
+    else
+        refreshing = true
+        M.refresh_taskfile()
+        vim.cmd("edit! " .. filepath)
+        vim.bo.readonly = true
+        refreshing = false
+    end
 end
 
 function M.tasks_clear()
     M.clear_tag_filter()
-    refreshing = true
-    M.refresh_taskfile()
-    vim.cmd("edit!")
-    vim.bo.readonly = true
-    refreshing = false
+    local cfg = require("taskbuffer.config").values
+    local filepath = cfg.tmpdir .. "/" .. vim.fn.strftime("%F") .. ".taskfile"
+    if vim.uv.fs_stat(filepath) then
+        vim.cmd("edit!")
+        vim.bo.readonly = true
+        refreshing = true
+        M.refresh_taskfile_async(function()
+            vim.cmd("edit!")
+            vim.bo.readonly = true
+            refreshing = false
+        end)
+    else
+        refreshing = true
+        M.refresh_taskfile()
+        vim.cmd("edit! " .. filepath)
+        vim.bo.readonly = true
+        refreshing = false
+    end
     vim.notify("[taskbuffer] tag filter cleared", vim.log.levels.INFO)
 end
 

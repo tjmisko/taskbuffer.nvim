@@ -23,7 +23,7 @@ function M.register()
         callback = discard_changes,
     })
 
-    -- Refresh on BufEnter
+    -- Refresh on BufEnter (async)
     vim.api.nvim_create_autocmd({ "BufEnter" }, {
         group = augroup,
         pattern = "*taskfile",
@@ -35,13 +35,13 @@ function M.register()
                 return
             end
             buffer.set_refreshing(true)
-            buffer.refresh_taskfile()
-            vim.cmd("edit!")
-            buffer.set_refreshing(false)
-            -- Reset cursor to beginning of line; conceal groups cause the
-            -- restored column to land far past visible content.
-            local row = vim.api.nvim_win_get_cursor(0)[1]
-            vim.api.nvim_win_set_cursor(0, { row, 0 })
+            buffer.refresh_taskfile_async(function()
+                vim.cmd("edit!")
+                vim.bo.readonly = true
+                buffer.set_refreshing(false)
+                local row = vim.api.nvim_win_get_cursor(0)[1]
+                vim.api.nvim_win_set_cursor(0, { row, 0 })
+            end)
         end,
     })
 end
