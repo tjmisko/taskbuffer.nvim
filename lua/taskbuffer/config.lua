@@ -34,6 +34,8 @@
 ---@field shift_date_forward string|false
 ---@field set_date_today string|false
 ---@field quickfix string|false
+---@field undo string|boolean|false
+---@field redo string|boolean|false
 
 ---@class TaskbufferMarkdownKeymaps
 ---@field shift_date_back string|false
@@ -120,6 +122,8 @@ M.defaults = {
             shift_date_forward = "<M-Right>",
             set_date_today = "<C-T>",
             quickfix = "<M-C-q>",
+            undo = true,
+            redo = true,
         },
         markdown = {
             shift_date_back = "<M-Left>",

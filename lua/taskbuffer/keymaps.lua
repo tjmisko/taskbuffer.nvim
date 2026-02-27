@@ -30,19 +30,23 @@ local function map(mode, context, action, rhs, opts)
     vim.keymap.set(mode, lhs, rhs, opts or {})
 end
 
---- Read a specific line from a file on disk.
----@param path string
----@param target integer
----@return string|nil
-local function read_line_from_file(path, target)
-    local i = 0
-    for l in io.lines(path) do
-        i = i + 1
-        if i == target then
-            return l
+--- Detect the key bound to a vim command (e.g., "undo", "redo").
+--- Falls back to the builtin default if no custom mapping found.
+---@param command string
+---@param builtin_default string
+---@return string
+local function detect_key(command, builtin_default)
+    local existing = vim.fn.maparg(builtin_default, "n", false, true)
+    if vim.tbl_isempty(existing) then
+        return builtin_default
+    end
+    for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
+        local rhs = (m.rhs or ""):lower()
+        if rhs:match(command) or rhs:match(vim.pesc(builtin_default:lower())) then
+            return m.lhs
         end
     end
-    return nil
+    return builtin_default
 end
 
 --- Bulk-shift due dates for multiple taskfile lines.
@@ -51,20 +55,22 @@ end
 ---@param days integer
 local function shift_task_dates_bulk(lines, days)
     local buffer = require("taskbuffer.buffer")
-    -- Group edits by file: { filepath = { {lnum, new_content}, ... } }
     local edits_by_file = {}
+    local all_edits = {}
     local shifted = 0
     for _, line in ipairs(lines) do
         local filepath, linenumber = util.parse_taskfile_line(line)
         if filepath and linenumber then
-            local source_line = read_line_from_file(filepath, linenumber)
+            local source_line = util.read_line_from_file(filepath, linenumber)
             if source_line then
                 local new_line = util.shift_date_in_string(source_line, days)
                 if new_line then
                     if not edits_by_file[filepath] then
                         edits_by_file[filepath] = {}
                     end
-                    table.insert(edits_by_file[filepath], { linenumber, new_line })
+                    local edit = { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }
+                    table.insert(edits_by_file[filepath], edit)
+                    all_edits[#all_edits + 1] = edit
                     shifted = shifted + 1
                 end
             end
@@ -75,14 +81,16 @@ local function shift_task_dates_bulk(lines, days)
         return
     end
     -- Apply edits per file, sorted by line number descending to avoid drift
-    for filepath, edits in pairs(edits_by_file) do
-        table.sort(edits, function(a, b) return a[1] > b[1] end)
+    for _, edits in pairs(edits_by_file) do
+        table.sort(edits, function(a, b) return a.linenumber > b.linenumber end)
         for _, edit in ipairs(edits) do
-            util.replace_line_in_file(filepath, edit[1], edit[2])
+            util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
         end
     end
-    buffer.refresh_and_restore_cursor()
     local direction = days > 0 and "forward" or "back"
+    local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
+    require("taskbuffer.undo").push({ op = op, edits = all_edits, timestamp = os.time() })
+    buffer.refresh_and_restore_cursor()
     vim.notify("[taskbuffer] shifted " .. shifted .. " task(s) " .. direction .. " " .. math.abs(days) .. " day(s)", vim.log.levels.INFO)
 end
 
@@ -106,7 +114,7 @@ local function shift_task_date_in_taskfile(days)
         vim.notify("[taskbuffer] could not parse taskfile line", vim.log.levels.WARN)
         return
     end
-    local source_line = read_line_from_file(filepath, linenumber)
+    local source_line = util.read_line_from_file(filepath, linenumber)
     if not source_line then
         vim.notify("[taskbuffer] could not read source line", vim.log.levels.WARN)
         return
@@ -117,6 +125,13 @@ local function shift_task_date_in_taskfile(days)
         return
     end
     util.replace_line_in_file(filepath, linenumber, new_line)
+    local direction = days > 0 and "forward" or "back"
+    local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
+    require("taskbuffer.undo").push({
+        op = op,
+        edits = {{ filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }},
+        timestamp = os.time(),
+    })
     buffer.refresh_and_restore_cursor()
     vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
 end
@@ -126,18 +141,21 @@ end
 local function set_task_dates_today_bulk(lines)
     local buffer = require("taskbuffer.buffer")
     local edits_by_file = {}
+    local all_edits = {}
     local updated = 0
     for _, line in ipairs(lines) do
         local filepath, linenumber = util.parse_taskfile_line(line)
         if filepath and linenumber then
-            local source_line = read_line_from_file(filepath, linenumber)
+            local source_line = util.read_line_from_file(filepath, linenumber)
             if source_line then
                 local new_line = util.set_date_today_in_string(source_line)
                 if new_line then
                     if not edits_by_file[filepath] then
                         edits_by_file[filepath] = {}
                     end
-                    table.insert(edits_by_file[filepath], { linenumber, new_line })
+                    local edit = { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }
+                    table.insert(edits_by_file[filepath], edit)
+                    all_edits[#all_edits + 1] = edit
                     updated = updated + 1
                 end
             end
@@ -147,12 +165,13 @@ local function set_task_dates_today_bulk(lines)
         vim.notify("[taskbuffer] no dated tasks in selection", vim.log.levels.WARN)
         return
     end
-    for filepath, edits in pairs(edits_by_file) do
-        table.sort(edits, function(a, b) return a[1] > b[1] end)
+    for _, edits in pairs(edits_by_file) do
+        table.sort(edits, function(a, b) return a.linenumber > b.linenumber end)
         for _, edit in ipairs(edits) do
-            util.replace_line_in_file(filepath, edit[1], edit[2])
+            util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
         end
     end
+    require("taskbuffer.undo").push({ op = "set today", edits = all_edits, timestamp = os.time() })
     buffer.refresh_and_restore_cursor()
     vim.notify("[taskbuffer] set " .. updated .. " task(s) to today", vim.log.levels.INFO)
 end
@@ -165,7 +184,7 @@ local function set_date_today_in_taskfile()
         vim.notify("[taskbuffer] could not parse taskfile line", vim.log.levels.WARN)
         return
     end
-    local source_line = read_line_from_file(filepath, linenumber)
+    local source_line = util.read_line_from_file(filepath, linenumber)
     if not source_line then
         vim.notify("[taskbuffer] could not read source line", vim.log.levels.WARN)
         return
@@ -176,6 +195,11 @@ local function set_date_today_in_taskfile()
         return
     end
     util.replace_line_in_file(filepath, linenumber, new_line)
+    require("taskbuffer.undo").push({
+        op = "set today",
+        edits = {{ filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line }},
+        timestamp = os.time(),
+    })
     buffer.refresh_and_restore_cursor()
     vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
 end
@@ -386,6 +410,27 @@ function M.setup_keymaps()
                 vim.fn.setqflist(qf_list, "r")
                 vim.cmd("copen")
             end, { buffer = true, desc = "Send selected tasks to quickfix" })
+
+            -- Undo/redo keymaps: true = auto-detect, string = use as-is, false = skip
+            local undo_key = binding("taskfile", "undo")
+            if undo_key == true then
+                undo_key = detect_key("undo", "u")
+            end
+            if undo_key then
+                vim.keymap.set("n", undo_key, function()
+                    require("taskbuffer.undo").undo()
+                end, { buffer = true, desc = "Undo last date change" })
+            end
+
+            local redo_key = binding("taskfile", "redo")
+            if redo_key == true then
+                redo_key = detect_key("redo", "<C-r>")
+            end
+            if redo_key then
+                vim.keymap.set("n", redo_key, function()
+                    require("taskbuffer.undo").redo()
+                end, { buffer = true, desc = "Redo last date change" })
+            end
         end,
     })
 
