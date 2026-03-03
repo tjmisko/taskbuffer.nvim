@@ -20,6 +20,20 @@ jobs:
       - name: Run Go tests
         run: cd go && go test ./...
 
+  lua-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      - name: Clone plenary.nvim
+        run: git clone --depth 1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim
+      - name: Run Lua tests
+        run: make test-lua
+
   lua-check:
     runs-on: ubuntu-latest
     steps:
@@ -29,7 +43,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: latest
-          args: --check lua/ plugin/
+          args: --check lua/ plugin/ tests/
       - name: Install selene
         run: cargo install selene
       - name: Run selene
