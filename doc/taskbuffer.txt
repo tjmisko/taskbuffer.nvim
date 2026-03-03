@@ -90,6 +90,11 @@ option not specified falls back to its default value.
           header = nil,  -- e.g. "## Tasks"
       },
 
+      -- Time horizons (nil = built-in defaults)
+      horizons = nil,
+      horizons_overlap = "sorted",
+      week_start = "monday",
+
       -- Task syntax formats (passed to Go binary)
       formats = {
           date = "%Y-%m-%d",
@@ -119,7 +124,6 @@ option not specified falls back to its default value.
           taskfile = {
               start_task         = "<leader>tb",
               go_to_file         = "gf",
-              partial            = "<leader>tp",
               irrelevant         = "<leader>ti",
               undo_irrelevant    = "<leader>tu",
               filter_tags        = "#",
@@ -140,6 +144,45 @@ option not specified falls back to its default value.
 To disable a keymap, set it to `false`: >lua
   keymaps = { global = { note = false } }
 <
+
+                                                    *taskbuffer-horizons*
+Horizons ~
+
+Horizons control how tasks are bucketed by due date. When `horizons` is
+nil (the default), the built-in horizons are used: Overdue, Today,
+Tomorrow, This Week, This Month, This Year, Far Off, and Someday.
+
+Each horizon is a table with these fields:
+
+  `label`    (string)         Heading text, e.g. `"# Today"`
+  `after`    (number|string)  Cutoff: integer day offset (0 = today),
+                            duration string ("2d", "1w", "1m", "1y"),
+                            or calendar keyword ("past", "yesterday",
+                            "end_of_week", "end_of_month",
+                            "end_of_quarter", "end_of_year")
+  `undated`  (boolean)        If true, collects undated tasks
+  `order`    (number|nil)     Explicit display order
+
+Example: >lua
+  require("taskbuffer").setup({
+      horizons = {
+          { label = "# Overdue", after = "past" },
+          { label = "# Today",   after = 0 },
+          { label = "# Soon",    after = "1w" },
+          { label = "# Backlog", undated = true },
+      },
+      horizons_overlap = "sorted",
+      week_start = "monday",
+  })
+<
+
+`horizons_overlap` controls task placement when multiple horizons match:
+
+  `"sorted"`       (default) Task appears in all matching horizons
+  `"first_match"`  Task appears only in the first matching horizon
+  `"narrowest"`    Task appears only in the narrowest matching horizon
+
+`week_start` sets the first day of the week (default: `"monday"`).
 
 ==============================================================================
 5. COMMANDS                                         *taskbuffer-commands*
@@ -167,7 +210,7 @@ Global (all filetypes) ~
   `<leader>td`        Defer task on current line
   `<leader>tx`        Quick check-off (no marker)
   `<leader>ti`        Mark task irrelevant
-  `<leader>tu`        Undo irrelevant/partial
+  `<leader>tu`        Undo irrelevant
   `<M-C-q>`           Send visual selection to quickfix
   `<leader>ev`        Insert a dated note entry
 
@@ -177,9 +220,8 @@ Taskfile buffer ~
   `<leader>tb`        Start timer for task under cursor
   `gf`                Jump to source file location
   `<CR>`              Jump to source file location
-  `<leader>tp`        Mark task partial
   `<leader>ti`        Mark task irrelevant
-  `<leader>tu`        Undo irrelevant/partial
+  `<leader>tu`        Undo irrelevant
   `#`                 Open Telescope tag picker
   `<leader>tt`        Clear all filters
   `<leader>tj`        Show/hide `::` markers
@@ -220,7 +262,6 @@ Markers are appended to task lines to track state changes:
   `::deferral [[DATE]] TIME`        Task deferred
   `::original [[DATE]]`             Original due date (on first deferral)
   `::irrelevant [[DATE]] TIME`      Marked irrelevant
-  `::partial [[DATE]] TIME`         Marked partial
 
 Full example: >
   - [x] Write report <30m> #work (@[[2026-02-17]] 15:00) ::start [[2026-02-17]] 15:17 ::complete [[2026-02-17]] 17:19

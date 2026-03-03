@@ -684,22 +684,6 @@ func TestCustom_PartialOverride(t *testing.T) {
 	}
 }
 
-func TestCustom_PartialStatus(t *testing.T) {
-	// Verify that [~] (partial) is parseable with default config
-	ctx := DefaultParseContext()
-	m := RawMatch{Path: "test.md", LineNumber: 1, Text: "- [~] Partial task (@[[2026-02-17]]) ::partial [[2026-02-17]] 10:00"}
-	task, err := ParseTask(m, ctx)
-	if err != nil {
-		t.Fatalf("partial task should parse: %v", err)
-	}
-	if task.Status != "partial" {
-		t.Errorf("status = %q, want partial", task.Status)
-	}
-	if task.Body != "Partial task" {
-		t.Errorf("body = %q", task.Body)
-	}
-}
-
 // =============================================================================
 // Filter Combinations
 // =============================================================================

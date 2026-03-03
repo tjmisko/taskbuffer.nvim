@@ -23,7 +23,6 @@
 ---@class TaskbufferTaskfileKeymaps
 ---@field start_task string|false
 ---@field go_to_file string|false
----@field partial string|false
 ---@field irrelevant string|false
 ---@field undo_irrelevant string|false
 ---@field filter_tags string|false
@@ -101,7 +100,7 @@ M.defaults = {
         time = "%H:%M",
         duration = "<{n}m>",
         tag_prefix = "#",
-        checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]", partial = "- [~]" },
+        checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]" },
         date_wrapper = { "(@[[", "]])" },
         marker_prefix = "::",
     },
@@ -119,7 +118,6 @@ M.defaults = {
         taskfile = {
             start_task = "<leader>tb",
             go_to_file = "gf",
-            partial = "<leader>tp",
             irrelevant = "<leader>ti",
             undo_irrelevant = "<leader>tu",
             filter_tags = "#",

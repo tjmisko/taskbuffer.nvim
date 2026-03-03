@@ -1,20 +1,17 @@
 # taskbuffer.nvim
 
-A neovim plugin for managing tasks defined inline in plain-text markdown notes.
-
-> Tasks are single lines of plain text, stored somewhere convenient for you, centralized later. Formatted your way.
+A simple Neovim plugin for managing tasks defined in plain text. Tasks are stored on single lines of plain text, formatted your way, stored *in situ*, and centralized later. Aggregate tasks across your projects, filter by tags, and pass straight through to the source files.
 
 ## Features
-
 - Scans markdown files with [ripgrep](https://github.com/BurntSushi/ripgrep) for fast, recursive task discovery
-- Displays tasks in a read-only **taskfile** buffer, bucketed by date interval (Overdue, Today, Tomorrow, This Week, etc.)
-- Start/stop/complete task timer with `::start`, `::stop`, `::complete` markers written to source files
-- Defer, mark irrelevant, mark partial — all operations modify source files directly
-- Filter tasks by tag via [Telescope](https://github.com/nvim-telescope/telescope.nvim) picker
+- Displays tasks in a read-only **taskfile** buffer, bucketed by configurable time horizon (Overdue, Today, Tomorrow, This Week, etc.)
+- Filter tasks by tag via [Telescope](https://github.com/nvim-telescope/telescope.nvim) picker. Support for other pickers forthcoming.
 - Shift task due dates with `<M-Left>` / `<M-Right>` in both taskfile and markdown buffers
 - Jump from taskfile line to source file location with `gf`
 - Create new tasks from the CLI with optional header-based insertion
 - Fully configurable: sources, keybindings, inbox location, task format
+- Start/stop/complete task timer with `::start`, `::stop`, `::complete` markers written to source files
+- Defer, mark irrelevant — all operations modify source files directly
 
 ## Requirements
 
@@ -84,6 +81,12 @@ require("taskbuffer").setup({
         header = nil,  -- e.g. "## Tasks" to insert below a heading
     },
 
+    -- Time horizons: how tasks are bucketed by due date (nil = built-in defaults)
+    -- See "Horizons" section below for details
+    horizons = nil,
+    horizons_overlap = "sorted",   -- "sorted", "first_match", or "narrowest"
+    week_start = "monday",         -- first day of the week
+
     -- Task syntax formats (passed to Go binary)
     formats = {
         date = "%Y-%m-%d",
@@ -109,7 +112,6 @@ require("taskbuffer").setup({
         taskfile = {
             start_task         = "<leader>tb",
             go_to_file         = "gf",
-            partial            = "<leader>tp",
             irrelevant         = "<leader>ti",
             undo_irrelevant    = "<leader>tu",
             filter_tags        = "#",
@@ -139,6 +141,39 @@ require("taskbuffer").setup({
 })
 ```
 
+### Horizons
+
+Horizons control how tasks are bucketed by due date in the taskfile buffer. When `horizons` is `nil` (the default), the built-in horizons are used: Overdue, Today, Tomorrow, This Week, This Month, This Year, Far Off, and Someday (undated).
+
+Each horizon is a table with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `label` | `string` | Heading text, e.g. `"# Today"` |
+| `after` | `number\|string` | Cutoff: integer day offset (`0` = today), duration string (`"2d"`, `"1w"`, `"1m"`, `"1y"`), or calendar keyword (`"past"`, `"yesterday"`, `"end_of_week"`, `"end_of_month"`, `"end_of_quarter"`, `"end_of_year"`) |
+| `undated` | `boolean` | If `true`, this bucket collects undated tasks |
+| `order` | `number\|nil` | Explicit display order (overrides default chronological ordering) |
+
+Example custom horizons:
+
+```lua
+require("taskbuffer").setup({
+    horizons = {
+        { label = "# Overdue", after = "past" },
+        { label = "# Today",   after = 0 },
+        { label = "# Soon",    after = "1w" },
+        { label = "# Backlog", undated = true },
+    },
+    horizons_overlap = "sorted",  -- how tasks in multiple horizons are handled
+    week_start = "monday",
+})
+```
+
+`horizons_overlap` controls what happens when a task falls into multiple horizons:
+- `"sorted"` (default): task appears in all matching horizons, sorted by date
+- `"first_match"`: task appears only in the first matching horizon
+- `"narrowest"`: task appears only in the narrowest matching horizon
+
 ## Task Syntax
 
 Tasks are standard markdown checkboxes with optional metadata:
@@ -149,7 +184,7 @@ Tasks are standard markdown checkboxes with optional metadata:
 
 | Component | Format | Required |
 |-----------|--------|----------|
-| Checkbox | `- [ ]`, `- [x]`, `- [-]`, `- [~]` | Yes |
+| Checkbox | `- [ ]`, `- [x]`, `- [-]` | Yes |
 | Body | Free text | Yes |
 | Duration | `<Nm>` (e.g. `<30m>`, `<90m>`) | No |
 | Tags | `#tag-name` | No |
@@ -168,7 +203,6 @@ Markers are appended to task lines to track state changes:
 | `::deferral [[DATE]] TIME` | Task deferred |
 | `::original [[DATE]]` | Original due date (preserved on first deferral) |
 | `::irrelevant [[DATE]] TIME` | Marked irrelevant |
-| `::partial [[DATE]] TIME` | Marked partial |
 
 Full example:
 
@@ -197,8 +231,7 @@ task current                       # Print current task name
 task tags                          # List all tags
 task defer <file> <line>           # Defer a task
 task irrelevant <file> <line>      # Mark task irrelevant
-task partial <file> <line>         # Mark task partial
-task unset <file> <line>           # Undo irrelevant/partial
+task unset <file> <line>           # Undo irrelevant
 task check <file> <line>           # Quick check-off
 task complete-at <file> <line>     # Complete a specific task
 task create [--file F] [--header H] <body>  # Create a new task
@@ -221,7 +254,7 @@ task --config '{"state_dir":"/tmp/state"}' current
 | Defer | `<leader>td` | Defer task on current line |
 | Check off | `<leader>tx` | Quick check-off (no marker) |
 | Irrelevant | `<leader>ti` | Mark task irrelevant |
-| Undo irrelevant | `<leader>tu` | Undo irrelevant/partial |
+| Undo irrelevant | `<leader>tu` | Undo irrelevant |
 | Quickfix | `<M-C-q>` | Send visual selection to quickfix |
 | Note | `<leader>ev` | Insert a dated note entry |
 
@@ -231,9 +264,8 @@ task --config '{"state_dir":"/tmp/state"}' current
 |--------|---------|-------------|
 | Start task | `<leader>tb` | Start timer for task under cursor |
 | Go to file | `gf` | Jump to source file location |
-| Partial | `<leader>tp` | Mark task partial |
 | Irrelevant | `<leader>ti` | Mark task irrelevant |
-| Undo irrelevant | `<leader>tu` | Undo irrelevant/partial |
+| Undo irrelevant | `<leader>tu` | Undo irrelevant |
 | Filter tags | `#` | Open Telescope tag picker |
 | Reset filters | `<leader>tt` | Clear all filters |
 | Toggle markers | `<leader>tj` | Show/hide `::` markers |

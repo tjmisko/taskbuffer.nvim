@@ -447,7 +447,7 @@ func TestAdversarial_FormatRoundtripMarkerMismatch(t *testing.T) {
 }
 
 func TestAdversarial_MutateRoundtripMissingStatus(t *testing.T) {
-	// Config has "open" and "done" but no "partial". ctx.checkbox["partial"]
+	// Config has "open" and "done" but no "waiting". ctx.checkbox["waiting"]
 	// returns "" (zero value). After fix: ChangeCheckbox rejects empty strings.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.md")
@@ -462,10 +462,10 @@ func TestAdversarial_MutateRoundtripMissingStatus(t *testing.T) {
 	})
 
 	fromCheckbox := ctx.checkbox["open"]
-	toCheckbox := ctx.checkbox["partial"] // "" — missing status
+	toCheckbox := ctx.checkbox["waiting"] // "" — missing status
 
 	if toCheckbox != "" {
-		t.Fatalf("expected empty string for missing status 'partial', got %q", toCheckbox)
+		t.Fatalf("expected empty string for missing status 'waiting', got %q", toCheckbox)
 	}
 
 	// ChangeCheckbox should reject the empty string instead of corrupting the file

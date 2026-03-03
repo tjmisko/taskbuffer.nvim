@@ -18,6 +18,13 @@ function M.setup(opts)
     config.apply(opts)
     M.config = config.values
 
+    -- Ensure helptags are generated (needed for dev checkouts where
+    -- the plugin manager hasn't run :helptags automatically).
+    local doc_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h") .. "/doc"
+    if vim.fn.isdirectory(doc_dir) == 1 then
+        vim.cmd("silent! helptags " .. vim.fn.fnameescape(doc_dir))
+    end
+
     require("taskbuffer.autocmds").register()
     require("taskbuffer.keymaps").setup_keymaps()
 end

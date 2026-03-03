@@ -224,26 +224,6 @@ func TestCmdUnset_Irrelevant(t *testing.T) {
 	}
 }
 
-func TestCmdUnset_Partial(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.md")
-	os.WriteFile(path, []byte("- [~] Task (@[[2026-02-17]]) ::partial [[2026-02-18]] 10:00\n"), 0644)
-
-	err := cmdUnset(DefaultParseContext(), []string{path, "1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	data, _ := os.ReadFile(path)
-	line := splitLines(string(data))[0]
-	if !strings.Contains(line, "- [ ]") {
-		t.Errorf("checkbox should be restored to [ ], got %q", line)
-	}
-	if strings.Contains(line, "::partial") {
-		t.Errorf("marker should be removed, got %q", line)
-	}
-}
-
 func TestCmdCreate_AppendToFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "inbox.md")
