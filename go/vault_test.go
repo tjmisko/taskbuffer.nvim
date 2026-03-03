@@ -384,7 +384,7 @@ func TestVault_CmdListEndToEnd(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--tag", "devops"})
+	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--tag", "devops"}, Config{})
 
 	w.Close()
 	os.Stdout = old
@@ -405,6 +405,145 @@ func TestVault_CmdListEndToEnd(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// Horizons vault: custom horizon configurations against real files
+// =============================================================================
+
+func TestVault_CustomHorizons(t *testing.T) {
+	vault := vaultPath(t, "horizons-vault")
+	tasks := openTasks(scanAndParse(t, vault))
+
+	now := time.Date(2026, 2, 17, 10, 0, 0, 0, time.Local)
+	horizons, err := ResolveHorizons([]HorizonSpec{
+		{Label: "# Overdue", After: "past"},
+		{Label: "# Now", After: float64(0)},
+		{Label: "# Next Week", After: "1w"},
+		{Label: "# Backlog", Undated: true},
+	}, now, time.Monday, "sorted")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := FormatTaskfile(tasks, now, FormatOpts{Horizons: horizons})
+
+	// Overdue tasks (Feb 10, Feb 14) should be under # Overdue
+	if !strings.Contains(output, "# Overdue") {
+		t.Error("expected # Overdue header")
+	}
+	if !strings.Contains(output, "Pay electricity bill") {
+		t.Error("expected overdue task")
+	}
+
+	// Today tasks (Feb 17) should be under # Now
+	if !strings.Contains(output, "# Now") {
+		t.Error("expected # Now header")
+	}
+	if !strings.Contains(output, "Morning standup") {
+		t.Error("expected today task under # Now")
+	}
+
+	// Future task (Feb 20) within 1w should be under # Now (sorted: >= day0 and < day7)
+	if !strings.Contains(output, "Team retrospective") {
+		t.Error("expected near-future task")
+	}
+
+	// Undated tasks should be under # Backlog, not # Someday
+	if !strings.Contains(output, "# Backlog") {
+		t.Error("expected custom undated label # Backlog")
+	}
+	if strings.Contains(output, "# Someday") {
+		t.Error("should use custom undated label, not default # Someday")
+	}
+	if !strings.Contains(output, "Learn Haskell") {
+		t.Error("expected undated task under # Backlog")
+	}
+}
+
+func TestVault_HorizonsOverlapFirstMatch(t *testing.T) {
+	vault := vaultPath(t, "horizons-vault")
+	tasks := openTasks(scanAndParse(t, vault))
+
+	now := time.Date(2026, 2, 17, 10, 0, 0, 0, time.Local)
+	// Priority has cutoff at day3 (Feb 20), General at day0 (Feb 17)
+	// In first_match: tasks check Priority first, then General
+	horizons, err := ResolveHorizons([]HorizonSpec{
+		{Label: "# Priority", After: float64(3)},
+		{Label: "# General", After: float64(0)},
+		{Label: "# Backlog", Undated: true},
+	}, now, time.Monday, "first_match")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	output := FormatTaskfile(tasks, now, FormatOpts{Horizons: horizons, Overlap: "first_match"})
+
+	// All tasks should appear somewhere in the output
+	if !strings.Contains(output, "Morning standup") {
+		t.Error("expected today task")
+	}
+	if !strings.Contains(output, "Learn Haskell") {
+		t.Error("expected undated task")
+	}
+
+	// Both headers should be present (we have tasks in both ranges)
+	if !strings.Contains(output, "# General") {
+		t.Error("expected # General header")
+	}
+	if !strings.Contains(output, "# Priority") {
+		t.Error("expected # Priority header")
+	}
+}
+
+func TestVault_WeekStartSunday(t *testing.T) {
+	vault := vaultPath(t, "horizons-vault")
+	tasks := openTasks(scanAndParse(t, vault))
+
+	now := time.Date(2026, 2, 17, 10, 0, 0, 0, time.Local) // Tuesday
+	// With Sunday week start: end_of_week = Feb 22 (day after Saturday)
+	// With Monday week start: end_of_week = Feb 23 (day after Sunday)
+	horizonsSunday, err := ResolveHorizons([]HorizonSpec{
+		{Label: "# Past", After: "past"},
+		{Label: "# Today", After: float64(0)},
+		{Label: "# This Week", After: "end_of_week"},
+		{Label: "# Later", After: "1m"},
+	}, now, time.Sunday, "sorted")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	horizonsMonday, err := ResolveHorizons([]HorizonSpec{
+		{Label: "# Past", After: "past"},
+		{Label: "# Today", After: float64(0)},
+		{Label: "# This Week", After: "end_of_week"},
+		{Label: "# Later", After: "1m"},
+	}, now, time.Monday, "sorted")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The end_of_week cutoff should differ between Sunday and Monday starts
+	// Sunday start: week boundary at Feb 22
+	// Monday start: week boundary at Feb 23
+	sundayCutoff := horizonsSunday[2].Cutoff
+	mondayCutoff := horizonsMonday[2].Cutoff
+	if !sundayCutoff.Before(mondayCutoff) {
+		t.Errorf("Sunday-start end_of_week (%s) should be before Monday-start (%s)",
+			sundayCutoff.Format("2006-01-02"), mondayCutoff.Format("2006-01-02"))
+	}
+
+	// Verify formatting works with both
+	outputSunday := FormatTaskfile(tasks, now, FormatOpts{Horizons: horizonsSunday})
+	outputMonday := FormatTaskfile(tasks, now, FormatOpts{Horizons: horizonsMonday})
+
+	// Both should produce valid output with task content
+	if !strings.Contains(outputSunday, "Morning standup") {
+		t.Error("Sunday output missing today task")
+	}
+	if !strings.Contains(outputMonday, "Morning standup") {
+		t.Error("Monday output missing today task")
+	}
+}
+
 func TestVault_CmdListIgnoreUndated(t *testing.T) {
 	vault := vaultPath(t, "basic-vault")
 
@@ -412,7 +551,7 @@ func TestVault_CmdListIgnoreUndated(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--ignore-undated"})
+	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--ignore-undated"}, Config{})
 
 	w.Close()
 	os.Stdout = old

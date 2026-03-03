@@ -32,13 +32,16 @@ func (s *sourceList) Set(val string) error {
 
 // Config holds runtime configuration passed via --config JSON.
 type Config struct {
-	StateDir     string            `json:"state_dir"`
-	DateFormat   string            `json:"date_format"`
-	TimeFormat   string            `json:"time_format"`
-	DateWrapper  []string          `json:"date_wrapper"`
-	MarkerPrefix string            `json:"marker_prefix"`
-	TagPrefix    string            `json:"tag_prefix"`
-	Checkbox     map[string]string `json:"checkbox"`
+	StateDir        string            `json:"state_dir"`
+	DateFormat      string            `json:"date_format"`
+	TimeFormat      string            `json:"time_format"`
+	DateWrapper     []string          `json:"date_wrapper"`
+	MarkerPrefix    string            `json:"marker_prefix"`
+	TagPrefix       string            `json:"tag_prefix"`
+	Checkbox        map[string]string `json:"checkbox"`
+	Horizons        []HorizonSpec     `json:"horizons,omitempty"`
+	HorizonsOverlap string            `json:"horizons_overlap,omitempty"`
+	WeekStart       string            `json:"week_start,omitempty"`
 }
 
 // Verbose controls whether parse warnings are printed to stderr.
@@ -86,7 +89,7 @@ func parseConfig(configJSON string) Config {
 	return cfg
 }
 
-func cmdList(notesPaths []string, ctx *ParseContext, args []string) error {
+func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) error {
 	var tags tagList
 	var showMarkers bool
 	var ignoreUndated bool
@@ -121,11 +124,21 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string) error {
 	}
 
 	now := time.Now().In(time.Local)
+	weekStart := parseWeekday(cfg.WeekStart)
+	overlap := cfg.HorizonsOverlap
+	if overlap == "" {
+		overlap = "sorted"
+	}
+
+	horizons, _ := ResolveHorizons(cfg.Horizons, now, weekStart, overlap)
+
 	opts := FormatOpts{
 		ShowMarkers:   showMarkers,
 		IgnoreUndated: ignoreUndated,
 		TagFilter:     tags,
 		TagPrefix:     ctx.tagPrefix,
+		Horizons:      horizons,
+		Overlap:       overlap,
 	}
 	fmt.Print(FormatTaskfile(tasks, now, opts))
 	return nil
@@ -584,7 +597,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "list":
-		err = cmdList(notesPaths, ctx, subArgs)
+		err = cmdList(notesPaths, ctx, subArgs, cfg)
 	case "do", "start":
 		err = cmdDo(notesPaths, ctx, cfg)
 	case "stop", "pause":
