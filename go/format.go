@@ -7,38 +7,79 @@ import (
 	"time"
 )
 
-type dateBucket struct {
-	Label  string
-	Cutoff time.Time
+func inHorizon(date time.Time, idx int, horizons []ResolvedHorizon) bool {
+	if idx == len(horizons)-1 {
+		return date.After(horizons[idx].Cutoff) || date.Equal(horizons[idx].Cutoff)
+	}
+	return (date.Equal(horizons[idx].Cutoff) || date.After(horizons[idx].Cutoff)) &&
+		date.Before(horizons[idx+1].Cutoff)
 }
 
-func buildBuckets(now time.Time) []dateBucket {
-	today := extractDate(now)
-	return []dateBucket{
-		{Label: "# Overdue", Cutoff: today.Add(-100 * 365 * 24 * time.Hour)},
-		{Label: "# Today", Cutoff: today},
-		{Label: "# Tomorrow", Cutoff: today.Add(24 * time.Hour)},
-		{Label: "# This Week", Cutoff: today.Add(2 * 24 * time.Hour)},
-		{Label: "# This Month", Cutoff: today.Add(8 * 24 * time.Hour)},
-		{Label: "# This Year", Cutoff: today.Add(31 * 24 * time.Hour)},
-		{Label: "# Far Off", Cutoff: today.Add(366 * 24 * time.Hour)},
+// firstMatchHorizon finds the first horizon (in list order) where date >= cutoff.
+func firstMatchHorizon(date time.Time, horizons []ResolvedHorizon) int {
+	for i, h := range horizons {
+		if h.Undated {
+			continue
+		}
+		if date.Equal(h.Cutoff) || date.After(h.Cutoff) {
+			return i
+		}
 	}
+	for i := len(horizons) - 1; i >= 0; i-- {
+		if !horizons[i].Undated {
+			return i
+		}
+	}
+	return 0
 }
 
-func inBucket(date time.Time, idx int, buckets []dateBucket) bool {
-	if idx == len(buckets)-1 {
-		return date.After(buckets[idx].Cutoff)
+// narrowestHorizon finds the horizon with the tightest date range containing the date.
+func narrowestHorizon(date time.Time, datedHorizons []ResolvedHorizon) int {
+	bestIdx := -1
+	bestSpan := time.Duration(1<<63 - 1)
+
+	for i, h := range datedHorizons {
+		if h.Undated {
+			continue
+		}
+		inRange := false
+		var span time.Duration
+		if i == len(datedHorizons)-1 || datedHorizons[i+1].Undated {
+			if date.Equal(h.Cutoff) || date.After(h.Cutoff) {
+				inRange = true
+				span = time.Duration(1<<62 - 1)
+			}
+		} else {
+			if (date.Equal(h.Cutoff) || date.After(h.Cutoff)) && date.Before(datedHorizons[i+1].Cutoff) {
+				inRange = true
+				span = datedHorizons[i+1].Cutoff.Sub(h.Cutoff)
+			}
+		}
+		if inRange && span < bestSpan {
+			bestSpan = span
+			bestIdx = i
+		}
 	}
-	return (date.Equal(buckets[idx].Cutoff) || date.After(buckets[idx].Cutoff)) &&
-		date.Before(buckets[idx+1].Cutoff)
+
+	if bestIdx == -1 {
+		for i := len(datedHorizons) - 1; i >= 0; i-- {
+			if !datedHorizons[i].Undated {
+				return i
+			}
+		}
+		return 0
+	}
+	return bestIdx
 }
 
 type FormatOpts struct {
 	ShowMarkers   bool
 	IgnoreUndated bool
-	TagFilter     []string // only show tasks matching these tags (OR logic)
-	TagPrefix     string   // prefix for tag display (default "#")
-	MarkerPrefix  string   // prefix for marker display (default "::")
+	TagFilter     []string          // only show tasks matching these tags (OR logic)
+	TagPrefix     string            // prefix for tag display (default "#")
+	MarkerPrefix  string            // prefix for marker display (default "::")
+	Horizons      []ResolvedHorizon // resolved horizons; nil uses defaults
+	Overlap       string            // "sorted", "first_match", "narrowest"
 }
 
 func formatTaskLine(t Task, opts FormatOpts) string {
@@ -131,6 +172,24 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 		tasks = filtered
 	}
 
+	// Resolve horizons if not provided
+	horizons := opts.Horizons
+	if len(horizons) == 0 {
+		horizons, _ = ResolveHorizons(nil, now, time.Monday, "sorted")
+	}
+
+	// Split horizons into dated and undated
+	var datedHorizons []ResolvedHorizon
+	var undatedHorizon *ResolvedHorizon
+	for i := range horizons {
+		if horizons[i].Undated {
+			h := horizons[i]
+			undatedHorizon = &h
+		} else {
+			datedHorizons = append(datedHorizons, horizons[i])
+		}
+	}
+
 	// Separate dated and undated tasks
 	var dated, undated []Task
 	for _, t := range tasks {
@@ -160,7 +219,11 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 		return undated[i].LineNumber < undated[j].LineNumber
 	})
 
-	buckets := buildBuckets(now)
+	overlap := opts.Overlap
+	if overlap == "" {
+		overlap = "sorted"
+	}
+
 	var b strings.Builder
 	interval := 0
 	lastInterval := -1
@@ -168,10 +231,17 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 	for _, t := range dated {
 		date := extractDate(*t.DueDate)
 
-		for i := interval; i < len(buckets); i++ {
-			if inBucket(date, i, buckets) {
-				interval = i
-				break
+		switch overlap {
+		case "first_match":
+			interval = firstMatchHorizon(date, datedHorizons)
+		case "narrowest":
+			interval = narrowestHorizon(date, datedHorizons)
+		default: // "sorted"
+			for i := interval; i < len(datedHorizons); i++ {
+				if inHorizon(date, i, datedHorizons) {
+					interval = i
+					break
+				}
 			}
 		}
 
@@ -179,7 +249,7 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 			if lastInterval != -1 {
 				b.WriteString("\n")
 			}
-			b.WriteString(buckets[interval].Label)
+			b.WriteString(datedHorizons[interval].Label)
 			b.WriteString("\n")
 			lastInterval = interval
 		}
@@ -188,12 +258,18 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 		b.WriteString("\n")
 	}
 
-	// Append undated tasks under # Someday
+	// Append undated tasks
+	undatedLabel := "# Someday"
+	if undatedHorizon != nil {
+		undatedLabel = undatedHorizon.Label
+	}
+
 	if len(undated) > 0 && !opts.IgnoreUndated {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString("# Someday\n")
+		b.WriteString(undatedLabel)
+		b.WriteString("\n")
 		for _, t := range undated {
 			b.WriteString(formatTaskLine(t, opts))
 			b.WriteString("\n")

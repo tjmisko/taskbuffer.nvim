@@ -60,6 +60,9 @@
 ---@field inbox TaskbufferInbox default location for new tasks
 ---@field formats TaskbufferFormats task syntax formats
 ---@field keymaps TaskbufferKeymaps keymap bindings
+---@field horizons table[]|nil horizon specs (label, after, undated, order)
+---@field horizons_overlap string overlap strategy: "sorted"|"first_match"|"narrowest"
+---@field week_start string first day of the week: "monday"|"sunday"|etc.
 
 ---@class TaskbufferConfigModule
 ---@field defaults TaskbufferConfig
@@ -77,6 +80,11 @@ M.defaults = {
     tmpdir = "/tmp",
 
     show_undated = true,
+
+    -- Horizon configuration (nil = use built-in defaults)
+    horizons = nil,
+    horizons_overlap = "sorted",
+    week_start = "monday",
 
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Documents/Notes" },
@@ -224,6 +232,15 @@ function M.config_json_arg()
         tag_prefix = M.values.formats.tag_prefix,
         checkbox = M.values.formats.checkbox,
     }
+    if M.values.horizons then
+        cfg.horizons = M.values.horizons
+    end
+    if M.values.horizons_overlap ~= "sorted" then
+        cfg.horizons_overlap = M.values.horizons_overlap
+    end
+    if M.values.week_start ~= "monday" then
+        cfg.week_start = M.values.week_start
+    end
     return vim.json.encode(cfg)
 end
 

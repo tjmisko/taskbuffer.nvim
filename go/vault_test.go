@@ -384,7 +384,7 @@ func TestVault_CmdListEndToEnd(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--tag", "devops"})
+	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--tag", "devops"}, Config{})
 
 	w.Close()
 	os.Stdout = old
@@ -412,7 +412,7 @@ func TestVault_CmdListIgnoreUndated(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--ignore-undated"})
+	err := cmdList([]string{vault}, DefaultParseContext(), []string{"--ignore-undated"}, Config{})
 
 	w.Close()
 	os.Stdout = old
