@@ -1,6 +1,6 @@
 # taskbuffer.nvim
 
-A simple Neovim plugin for managing tasks defined in plain text. Tasks are stored on single lines of plain text, formatted your way, stored *in situ*, and centralized later. Aggregate tasks across your projects, filter by tags, and pass straight through to the source files.
+A simple Neovim plugin for managing tasks defined in plain text. Tasks are stored on single lines of plain text, formatted your way, stored *in situ*, and centralized in a transient task buffer. Aggregate tasks across your projects, filter by tags, and pass straight through to the source files.
 
 ## Features
 - Scans markdown files with [ripgrep](https://github.com/BurntSushi/ripgrep) for fast, recursive task discovery
