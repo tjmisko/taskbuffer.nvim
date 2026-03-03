@@ -337,11 +337,6 @@ function M.setup_keymaps()
                 util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
             end, { buffer = true })
 
-            map("n", "taskfile", "partial", function()
-                local filepath, linenumber = get_task_location_from_taskfile()
-                util.run_task_cmd({ "partial", filepath, tostring(linenumber) }, true)
-            end, { buffer = true })
-
             map("n", "taskfile", "filter_tags", function()
                 require("taskbuffer.tags").pick_tags()
             end, { buffer = true, desc = "Filter tasks by tag" })

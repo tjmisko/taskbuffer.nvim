@@ -392,29 +392,7 @@ func cmdIrrelevant(ctx *ParseContext, args []string) error {
 	return AppendToLine(filePath, lineNum, marker)
 }
 
-// cmdPartial marks a task as partial: changes checkbox to [~] and appends marker.
-func cmdPartial(ctx *ParseContext, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("usage: task partial <filepath> <linenum>")
-	}
-	filePath := args[0]
-	lineNum, err := strconv.Atoi(args[1])
-	if err != nil {
-		return fmt.Errorf("bad line number: %w", err)
-	}
-
-	now := time.Now().In(time.Local)
-	marker := FormatMarker("partial", now)
-
-	openCb := ctx.checkbox["open"]
-	partCb := ctx.checkbox["partial"]
-	if err := ChangeCheckbox(filePath, lineNum, openCb, partCb); err != nil {
-		return err
-	}
-	return AppendToLine(filePath, lineNum, marker)
-}
-
-// cmdUnset undoes an irrelevant or partial: removes last marker and restores checkbox.
+// cmdUnset undoes an irrelevant marking: removes last marker and restores checkbox.
 func cmdUnset(ctx *ParseContext, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: task unset <filepath> <linenum>")
@@ -439,18 +417,11 @@ func cmdUnset(ctx *ParseContext, args []string) error {
 	line := lines[idx]
 	openCb := ctx.checkbox["open"]
 
-	// Try irrelevant first, then partial
 	if strings.Contains(line, ctx.markerPrefix+"irrelevant") {
 		if err := RemoveLastMarker(filePath, lineNum, "irrelevant"); err != nil {
 			return err
 		}
 		return ChangeCheckbox(filePath, lineNum, ctx.checkbox["irrelevant"], openCb)
-	}
-	if strings.Contains(line, ctx.markerPrefix+"partial") {
-		if err := RemoveLastMarker(filePath, lineNum, "partial"); err != nil {
-			return err
-		}
-		return ChangeCheckbox(filePath, lineNum, ctx.checkbox["partial"], openCb)
 	}
 
 	return nil
@@ -612,8 +583,6 @@ func main() {
 		err = cmdDefer(subArgs)
 	case "irrelevant":
 		err = cmdIrrelevant(ctx, subArgs)
-	case "partial":
-		err = cmdPartial(ctx, subArgs)
 	case "unset":
 		err = cmdUnset(ctx, subArgs)
 	case "check":
@@ -624,7 +593,7 @@ func main() {
 		err = cmdCreate(ctx, subArgs)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		fmt.Fprintf(os.Stderr, "usage: task [list|do|stop|complete|current|tags|defer|irrelevant|partial|unset|check|complete-at|create]\n")
+		fmt.Fprintf(os.Stderr, "usage: task [list|do|stop|complete|current|tags|defer|irrelevant|unset|check|complete-at|create]\n")
 		os.Exit(1)
 	}
 

@@ -16,12 +16,12 @@ type Task struct {
 	DueTime    string     // "" or "HH:MM"
 	Duration   string     // "" or "30m", "90m", etc.
 	Tags       []string
-	Status     string // "open", "done", "irrelevant", "partial"
+	Status     string // "open", "done", "irrelevant"
 	Markers    []Marker
 }
 
 type Marker struct {
-	Kind string // "start", "stop", "complete", "deferral", "original", "irrelevant", "partial"
+	Kind string // "start", "stop", "complete", "deferral", "original", "irrelevant"
 	Date string // "YYYY-MM-DD"
 	Time string // "HH:MM" or ""
 }
@@ -55,7 +55,6 @@ func NewParseContext(cfg Config) *ParseContext {
 			"open":       "- [ ]",
 			"done":       "- [x]",
 			"irrelevant": "- [-]",
-			"partial":    "- [~]",
 		}
 	}
 
