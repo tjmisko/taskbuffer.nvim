@@ -157,7 +157,7 @@ func Scan(ctx *ParseContext, notesPaths ...string) ([]RawMatch, error) {
 
 // ScanProjects finds markdown files with "project" in frontmatter tags and a due date,
 // returning them as Task entries. goDateFmt is the Go time layout for parsing dates.
-func ScanProjects(goDateFmt string, notesPaths ...string) ([]Task, error) {
+func ScanProjects(goDateFmt string, fmCfg FrontmatterConfig, dateErrors *[]DateError, notesPaths ...string) ([]Task, error) {
 	paths := expandGlobs(notesPaths)
 	if len(paths) == 0 {
 		return nil, nil
@@ -194,20 +194,38 @@ func ScanProjects(goDateFmt string, notesPaths ...string) ([]Task, error) {
 				break
 			}
 		}
-		if !hasProject || fm.Due == "" {
+		dueKey := fmCfg.DueKeyResolved()
+		statusKey := fmCfg.StatusKeyResolved()
+		doneValues := fmCfg.DoneValuesResolved()
+
+		fmDue := fm.GetString(dueKey)
+		if !hasProject || fmDue == "" {
 			continue
 		}
 
-		s := strings.ToLower(fm.Status)
-		if s == "completed" || s == "done" {
+		fmStatus := strings.ToLower(fm.GetString(statusKey))
+		isDone := false
+		for _, dv := range doneValues {
+			if fmStatus == strings.ToLower(dv) {
+				isDone = true
+				break
+			}
+		}
+		if isDone {
 			continue
 		}
 
 		var dueDate time.Time
 		var dueTime string
-		parts := strings.SplitN(fm.Due, " ", 2)
+		parts := strings.SplitN(fmDue, " ", 2)
 		dueDate, err = time.Parse(goDateFmt, parts[0])
 		if err != nil {
+			collectDateError(dateErrors, DateError{
+				FilePath: filePath,
+				DateStr:  parts[0],
+				Context:  "frontmatter project due",
+				Err:      err,
+			})
 			continue
 		}
 		if len(parts) == 2 {
@@ -224,6 +242,7 @@ func ScanProjects(goDateFmt string, notesPaths ...string) ([]Task, error) {
 			DueTime:    dueTime,
 			Tags:       fm.Tags,
 			Status:     "open",
+			SortLast:   true,
 		})
 	}
 

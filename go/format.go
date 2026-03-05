@@ -213,6 +213,9 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 		if dated[i].FilePath != dated[j].FilePath {
 			return dated[i].FilePath < dated[j].FilePath
 		}
+		if dated[i].SortLast != dated[j].SortLast {
+			return !dated[i].SortLast
+		}
 		return dated[i].LineNumber < dated[j].LineNumber
 	})
 
@@ -220,6 +223,9 @@ func FormatTaskfile(tasks []Task, now time.Time, opts FormatOpts) string {
 	sort.Slice(undated, func(i, j int) bool {
 		if undated[i].FilePath != undated[j].FilePath {
 			return undated[i].FilePath < undated[j].FilePath
+		}
+		if undated[i].SortLast != undated[j].SortLast {
+			return !undated[i].SortLast
 		}
 		return undated[i].LineNumber < undated[j].LineNumber
 	})

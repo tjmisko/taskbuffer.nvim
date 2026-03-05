@@ -284,7 +284,7 @@ func TestVault_ProjectScanning(t *testing.T) {
 	ResetFrontmatterCache()
 	vault := vaultPath(t, "frontmatter-vault")
 
-	projectTasks, err := ScanProjects("2006-01-02", vault)
+	projectTasks, err := ScanProjects("2006-01-02", FrontmatterConfig{}, nil, vault)
 	if err != nil {
 		t.Fatalf("ScanProjects failed: %v", err)
 	}

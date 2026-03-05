@@ -279,6 +279,131 @@ function M.get_visual_lines()
     return vim.api.nvim_buf_get_lines(0, s_line - 1, e_line, false)
 end
 
+--- Find the frontmatter due date line in a file.
+--- Scans for `<due_key>:` between `---` delimiters.
+---@param path string
+---@param due_key string
+---@return integer|nil line_number
+---@return string|nil current_value (the date portion)
+---@return boolean is_quoted
+function M.find_frontmatter_due_line(path, due_key)
+    local in_fm = false
+    local i = 0
+    for line in io.lines(path) do
+        i = i + 1
+        if i == 1 then
+            if line:match("^%-%-%-$") then
+                in_fm = true
+            else
+                return nil, nil, false
+            end
+        elseif in_fm then
+            if line:match("^%-%-%-$") then
+                return nil, nil, false
+            end
+            local key, value = line:match("^(" .. vim.pesc(due_key) .. "):%s*(.*)$")
+            if key then
+                local quoted = false
+                local date_val = value
+                -- Strip quotes if present
+                local q = value:match('^"(.*)"$') or value:match("^'(.*)'$")
+                if q then
+                    quoted = true
+                    date_val = q
+                end
+                return i, date_val, quoted
+            end
+        end
+    end
+    return nil, nil, false
+end
+
+--- Shift the frontmatter due date in a file by a number of days.
+---@param path string
+---@param days integer
+---@param due_key string
+---@return string|nil new_date
+---@return integer|nil line_number
+---@return string|nil old_line
+---@return string|nil new_line
+function M.shift_frontmatter_due(path, days, due_key)
+    local line_num, date_val, is_quoted = M.find_frontmatter_due_line(path, due_key)
+    if not line_num or not date_val or date_val == "" then
+        return nil, nil, nil, nil
+    end
+
+    -- Parse date (just the date portion, ignore time)
+    local date_part = date_val:match("^(%S+)")
+    if not date_part then
+        return nil, nil, nil, nil
+    end
+
+    local y, m, d = parse_date_components(date_part)
+    if not y then
+        return nil, nil, nil, nil
+    end
+
+    local cfg = require("taskbuffer.config").values.formats
+    local date_fmt = cfg.date or "%Y-%m-%d"
+    local t = os.time({ year = y, month = m, day = d })
+    local new_t = t + days * 86400
+    local new_date = os.date(date_fmt, new_t)
+
+    -- Reconstruct time portion if present
+    local time_part = date_val:match("^%S+%s+(.+)$")
+    local new_val = new_date
+    if time_part then
+        new_val = new_date .. " " .. time_part
+    end
+
+    local old_full_line = M.read_line_from_file(path, line_num)
+    local new_full_line
+    if is_quoted then
+        new_full_line = due_key .. ': "' .. new_val .. '"'
+    else
+        new_full_line = due_key .. ": " .. new_val
+    end
+
+    M.replace_line_in_file(path, line_num, new_full_line)
+    return new_date, line_num, old_full_line, new_full_line
+end
+
+--- Set the frontmatter due date to today.
+---@param path string
+---@param due_key string
+---@return string|nil new_date
+---@return integer|nil line_number
+---@return string|nil old_line
+---@return string|nil new_line
+function M.set_frontmatter_due_today(path, due_key)
+    local line_num, date_val, is_quoted = M.find_frontmatter_due_line(path, due_key)
+    if not line_num or not date_val or date_val == "" then
+        return nil, nil, nil, nil
+    end
+
+    local cfg = require("taskbuffer.config").values.formats
+    local date_fmt = cfg.date or "%Y-%m-%d"
+    local today = os.date(date_fmt)
+
+    -- Preserve time portion if present
+    local time_part = date_val:match("^%S+%s+(.+)$")
+    local new_val = today
+    if time_part then
+        new_val = today .. " " .. time_part
+    end
+
+    local old_full_line = M.read_line_from_file(path, line_num)
+    local new_full_line
+    if is_quoted then
+        new_full_line = due_key .. ': "' .. new_val .. '"'
+    else
+        new_full_line = due_key .. ": " .. new_val
+    end
+
+    M.replace_line_in_file(path, line_num, new_full_line)
+    return today, line_num, old_full_line, new_full_line
+end
+
 --- Parse taskfile lines into quickfix entries.
 ---@param lines string[]
 ---@return table[] qf_list

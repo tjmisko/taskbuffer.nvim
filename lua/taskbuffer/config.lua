@@ -46,6 +46,16 @@
 ---@field taskfile TaskbufferTaskfileKeymaps
 ---@field markdown TaskbufferMarkdownKeymaps
 
+---@class TaskbufferFrontmatterStatus
+---@field key string YAML key for status field
+---@field done_values string[] values that indicate completion
+
+---@class TaskbufferFrontmatter
+---@field due_key string YAML key for the due date field
+---@field inherit_due boolean whether undated tasks inherit the file's frontmatter due date
+---@field require_tags string[] frontmatter tags required for inheritance (empty = all files)
+---@field status TaskbufferFrontmatterStatus status configuration
+
 ---@class TaskbufferInbox
 ---@field file string path to inbox markdown file
 ---@field header string|nil optional heading to insert below
@@ -62,6 +72,7 @@
 ---@field horizons table[]|nil horizon specs (label, after, undated, order)
 ---@field horizons_overlap string overlap strategy: "sorted"|"first_match"|"narrowest"
 ---@field week_start string first day of the week: "monday"|"sunday"|etc.
+---@field frontmatter TaskbufferFrontmatter frontmatter configuration
 
 ---@class TaskbufferConfigModule
 ---@field defaults TaskbufferConfig
@@ -92,6 +103,17 @@ M.defaults = {
     inbox = {
         file = "~/Documents/Notes/inbox.md",
         header = nil,
+    },
+
+    -- Frontmatter configuration
+    frontmatter = {
+        due_key = "due",
+        inherit_due = true,
+        require_tags = {},
+        status = {
+            key = "status",
+            done_values = { "done", "complete" },
+        },
     },
 
     -- Task syntax formats (passed to Go binary)
@@ -238,6 +260,16 @@ function M.config_json_arg()
     end
     if M.values.week_start ~= "monday" then
         cfg.week_start = M.values.week_start
+    end
+    local fm = M.values.frontmatter
+    if fm then
+        cfg.frontmatter = {
+            due_key = fm.due_key,
+            inherit_due = fm.inherit_due,
+            require_tags = fm.require_tags,
+            status_key = fm.status and fm.status.key or "status",
+            done_values = fm.status and fm.status.done_values or { "done", "complete" },
+        }
     end
     return vim.json.encode(cfg)
 end

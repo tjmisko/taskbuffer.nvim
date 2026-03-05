@@ -95,6 +95,17 @@ option not specified falls back to its default value.
       horizons_overlap = "sorted",
       week_start = "monday",
 
+      -- Frontmatter configuration
+      frontmatter = {
+          due_key = "due",
+          inherit_due = true,
+          require_tags = {},
+          status = {
+              key = "status",
+              done_values = { "done", "complete" },
+          },
+      },
+
       -- Task syntax formats (passed to Go binary)
       formats = {
           date = "%Y-%m-%d",
@@ -118,7 +129,6 @@ option not specified falls back to its default value.
               check_off       = "<leader>tx",
               irrelevant      = "<leader>ti",
               undo_irrelevant = "<leader>tu",
-              quickfix        = "<M-C-q>",
               note            = "<leader>ev",
           },
           taskfile = {
@@ -132,10 +142,15 @@ option not specified falls back to its default value.
               toggle_undated     = "<leader>ts",
               shift_date_back    = "<M-Left>",
               shift_date_forward = "<M-Right>",
+              set_date_today     = "<C-T>",
+              quickfix           = "<M-C-q>",
+              undo               = true,
+              redo               = true,
           },
           markdown = {
               shift_date_back    = "<M-Left>",
               shift_date_forward = "<M-Right>",
+              set_date_today     = "<C-T>",
           },
       },
   })
@@ -233,6 +248,36 @@ Known limitations:
 - Changing the date format mid-stream means existing tasks in the old
   format will not parse. Migrate existing tasks manually.
 
+                                                  *taskbuffer-frontmatter*
+Frontmatter ~
+
+taskbuffer reads YAML frontmatter from markdown files to enrich tasks:
+
+- Tag inheritance: Tags from the frontmatter `tags` field are merged
+  with inline `#tags` on each task.
+- Due date inheritance: When `inherit_due` is enabled (the default),
+  undated tasks inherit the file's frontmatter due date.
+- Status filtering: Files whose frontmatter status matches a
+  `done_values` entry (e.g. `status: done`) are excluded from the
+  task list.
+- Project tasks: Files with a `project` tag and a frontmatter due
+  date appear as a synthetic project task, sorted after regular tasks
+  with the same date.
+
+`require_tags` restricts due date inheritance to files with specific
+frontmatter tags. For example, setting `require_tags = { "project" }`
+means only files tagged `project` will inherit frontmatter due dates.
+
+                                                   *taskbuffer-health*
+Health check ~
+
+Run `:checkhealth taskbuffer` to verify your setup. Checks:
+- Neovim version (>= 0.10)
+- Go binary is built and executable
+- ripgrep is available
+- Source directories exist
+- telescope.nvim availability (optional)
+
 ==============================================================================
 5. COMMANDS                                         *taskbuffer-commands*
 
@@ -260,15 +305,13 @@ Global (all filetypes) ~
   `<leader>tx`        Quick check-off (no marker)
   `<leader>ti`        Mark task irrelevant
   `<leader>tu`        Undo irrelevant
-  `<M-C-q>`           Send visual selection to quickfix
   `<leader>ev`        Insert a dated note entry
 
 Taskfile buffer ~
 
   Key               Action ~
   `<leader>tb`        Start timer for task under cursor
-  `gf`                Jump to source file location
-  `<CR>`              Jump to source file location
+  `gf` / `<CR>`       Jump to source file location
   `<leader>ti`        Mark task irrelevant
   `<leader>tu`        Undo irrelevant
   `#`                 Open Telescope tag picker
@@ -277,12 +320,20 @@ Taskfile buffer ~
   `<leader>ts`        Toggle undated task visibility
   `<M-Left>`          Move due date earlier (accepts count)
   `<M-Right>`         Move due date later (accepts count)
+  `<C-T>`             Set due date to today
+  `<M-C-q>`           Send visual selection to quickfix
+  `u`                 Undo last date change (auto-detect)
+  `<C-r>`             Redo last date change (auto-detect)
+
+Date shift, set today, and quickfix also work in visual mode on
+multiple tasks.
 
 Markdown files ~
 
   Key               Action ~
   `<M-Left>`          Move due date earlier (accepts count)
   `<M-Right>`         Move due date later (accepts count)
+  `<C-T>`             Set due date to today
 
 ==============================================================================
 7. TASK SYNTAX                                       *taskbuffer-syntax*

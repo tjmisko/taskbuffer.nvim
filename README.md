@@ -87,6 +87,17 @@ require("taskbuffer").setup({
     horizons_overlap = "sorted",   -- "sorted", "first_match", or "narrowest"
     week_start = "monday",         -- first day of the week
 
+    -- Frontmatter configuration
+    frontmatter = {
+        due_key = "due",         -- YAML key for the due date field
+        inherit_due = true,      -- undated tasks inherit the file's frontmatter due date
+        require_tags = {},       -- only inherit due if file has these frontmatter tags
+        status = {
+            key = "status",              -- YAML key for status field
+            done_values = { "done", "complete" },  -- values that mark a file as complete
+        },
+    },
+
     -- Task syntax formats (passed to Go binary)
     formats = {
         date = "%Y-%m-%d",
@@ -94,7 +105,7 @@ require("taskbuffer").setup({
         duration = "<{n}m>",
         tag_prefix = "#",
         checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]" },
-        date_wrapper = { "(@[[", "]])" },
+        date_wrapper = { "(@[[", "]]", ")" },
         marker_prefix = "::",
     },
 
@@ -106,7 +117,6 @@ require("taskbuffer").setup({
             check_off       = "<leader>tx",
             irrelevant      = "<leader>ti",
             undo_irrelevant = "<leader>tu",
-            quickfix        = "<M-C-q>",
             note            = "<leader>ev",
         },
         taskfile = {
@@ -120,10 +130,15 @@ require("taskbuffer").setup({
             toggle_undated     = "<leader>ts",
             shift_date_back    = "<M-Left>",
             shift_date_forward = "<M-Right>",
+            set_date_today     = "<C-T>",
+            quickfix           = "<M-C-q>",
+            undo               = true,
+            redo               = true,
         },
         markdown = {
             shift_date_back    = "<M-Left>",
             shift_date_forward = "<M-Right>",
+            set_date_today     = "<C-T>",
         },
     },
 })
@@ -174,6 +189,26 @@ require("taskbuffer").setup({
 - `"first_match"`: task appears only in the first matching horizon
 - `"narrowest"`: task appears only in the narrowest matching horizon
 
+### Frontmatter
+
+taskbuffer reads YAML frontmatter from markdown files to enrich tasks:
+
+- **Tag inheritance**: Tags from the frontmatter `tags` field are merged with inline `#tags` on each task.
+- **Due date inheritance**: When `inherit_due` is enabled (the default), undated tasks inherit the file's frontmatter due date. This is useful for project notes where all tasks share a deadline.
+- **Status filtering**: Files whose frontmatter status matches a `done_values` entry (e.g. `status: done`) are automatically excluded from the task list.
+- **Project tasks**: Files with a `project` tag and a frontmatter due date appear as a synthetic "project" task in the taskfile, sorted after regular tasks with the same date.
+
+The `require_tags` option restricts due date inheritance to files that have specific frontmatter tags. For example, `require_tags = { "project" }` means only files tagged `project` will have their frontmatter due date inherited by undated tasks.
+
+### Health Check
+
+Run `:checkhealth taskbuffer` to verify your setup. The health check validates:
+- Neovim version (>= 0.10)
+- Go binary is built and executable
+- ripgrep is available
+- Source directories exist
+- telescope.nvim availability (optional)
+
 ## Task Syntax
 
 Tasks are standard markdown checkboxes with optional metadata:
@@ -223,7 +258,7 @@ Full example:
 The Go binary can also be used directly:
 
 ```bash
-task list [--tag TAG] [-markers]   # List tasks (default)
+task list [--tag TAG] [--markers] [--ignore-undated]  # List tasks (default)
 task do                            # Pick and start a task (fzf)
 task stop                          # Stop the current task
 task complete                      # Complete the current task
@@ -255,7 +290,6 @@ task --config '{"state_dir":"/tmp/state"}' current
 | Check off | `<leader>tx` | Quick check-off (no marker) |
 | Irrelevant | `<leader>ti` | Mark task irrelevant |
 | Undo irrelevant | `<leader>tu` | Undo irrelevant |
-| Quickfix | `<M-C-q>` | Send visual selection to quickfix |
 | Note | `<leader>ev` | Insert a dated note entry |
 
 ### Taskfile buffer
@@ -263,22 +297,29 @@ task --config '{"state_dir":"/tmp/state"}' current
 | Action | Default | Description |
 |--------|---------|-------------|
 | Start task | `<leader>tb` | Start timer for task under cursor |
-| Go to file | `gf` | Jump to source file location |
+| Go to file | `gf` / `<CR>` | Jump to source file location |
 | Irrelevant | `<leader>ti` | Mark task irrelevant |
 | Undo irrelevant | `<leader>tu` | Undo irrelevant |
 | Filter tags | `#` | Open Telescope tag picker |
 | Reset filters | `<leader>tt` | Clear all filters |
 | Toggle markers | `<leader>tj` | Show/hide `::` markers |
 | Toggle undated | `<leader>ts` | Show/hide undated tasks |
-| Shift date back | `<M-Left>` | Move due date earlier |
-| Shift date forward | `<M-Right>` | Move due date later |
+| Shift date back | `<M-Left>` | Move due date earlier (accepts count) |
+| Shift date forward | `<M-Right>` | Move due date later (accepts count) |
+| Set date today | `<C-T>` | Set due date to today |
+| Quickfix | `<M-C-q>` | Send visual selection to quickfix |
+| Undo | `u` (auto-detect) | Undo last date change |
+| Redo | `<C-r>` (auto-detect) | Redo last date change |
+
+Date shift, set today, and quickfix also work in visual mode on multiple tasks.
 
 ### Markdown files
 
 | Action | Default | Description |
 |--------|---------|-------------|
-| Shift date back | `<M-Left>` | Move due date earlier |
-| Shift date forward | `<M-Right>` | Move due date later |
+| Shift date back | `<M-Left>` | Move due date earlier (accepts count) |
+| Shift date forward | `<M-Right>` | Move due date later (accepts count) |
+| Set date today | `<C-T>` | Set due date to today |
 
 ## Architecture
 
@@ -289,9 +330,9 @@ Neovim <── buffer.lua reads .taskfile <────────────�
          keymaps.lua calls Go binary for mutations (defer, irrelevant, etc.)
 ```
 
-**Go binary** (`go/`): Scanning (`scan.go`), parsing (`parse.go`), formatting (`format.go`), file mutation (`mutate.go`), timer state (`state.go`), frontmatter parsing (`frontmatter.go`).
+**Go binary** (`go/`): Scanning (`scan.go`), parsing (`parse.go`), formatting (`format.go`), horizon logic (`horizon.go`), date/time format conversion (`timeformat.go`), file mutation (`mutate.go`), timer state (`state.go`), frontmatter parsing (`frontmatter.go`).
 
-**Lua plugin** (`lua/taskbuffer/`): Config (`config.lua`), setup and public API (`init.lua`), buffer management (`buffer.lua`), autocmds (`autocmds.lua`), keymaps (`keymaps.lua`), commands (`commands.lua`), Telescope tag picker (`tags.lua`), utilities (`util.lua`).
+**Lua plugin** (`lua/taskbuffer/`): Config (`config.lua`), setup and public API (`init.lua`), buffer management (`buffer.lua`), autocmds (`autocmds.lua`), keymaps (`keymaps.lua`), commands (`commands.lua`), Telescope tag picker (`tags.lua`), undo/redo stack (`undo.lua`), utilities (`util.lua`), health check (`health.lua`).
 
 ## Contributing
 
