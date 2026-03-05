@@ -39,6 +39,7 @@ type ParseContext struct {
 	tagPrefix     string            // for output formatting
 	scanPattern   string            // rg pattern for scanning
 	checkbox      map[string]string // status_name -> checkbox string (for mutations)
+	formats       DateTimeFormats   // resolved date/time formats
 }
 
 // NewParseContext builds a ParseContext from a Config, falling back to defaults
@@ -120,16 +121,22 @@ func NewParseContext(cfg Config) *ParseContext {
 	tagPrefixEscaped := regexp.QuoteMeta(ctx.tagPrefix)
 	ctx.tagRe = regexp.MustCompile(tagPrefixEscaped + `([A-Za-z_][\w-]*)`)
 
+	// Resolve date/time formats
+	ctx.formats = ResolveDateTimeFormats(cfg.DateFormat, cfg.TimeFormat)
+
 	// Date wrapper
 	dateOpen := `\(@\[\[`
-	dateClose := `\]\]\s*(\d{2}:\d{2})?\)`
-	if len(cfg.DateWrapper) == 2 && cfg.DateWrapper[0] != "" && cfg.DateWrapper[1] != "" {
+	dateClose := `\]\]\s*(` + ctx.formats.TimeRe + `)?\)`
+	if len(cfg.DateWrapper) == 3 && cfg.DateWrapper[0] != "" && cfg.DateWrapper[1] != "" && cfg.DateWrapper[2] != "" {
+		dateOpen = regexp.QuoteMeta(cfg.DateWrapper[0])
+		dateClose = regexp.QuoteMeta(cfg.DateWrapper[1]) + `\s*(` + ctx.formats.TimeRe + `)?` + regexp.QuoteMeta(cfg.DateWrapper[2])
+	} else if len(cfg.DateWrapper) == 2 && cfg.DateWrapper[0] != "" && cfg.DateWrapper[1] != "" {
 		dateOpen = regexp.QuoteMeta(cfg.DateWrapper[0])
 		dateClose = regexp.QuoteMeta(cfg.DateWrapper[1])
 		// Insert the time capture group before the closing wrapper
-		dateClose = `\s*(\d{2}:\d{2})?` + dateClose
+		dateClose = `\s*(` + ctx.formats.TimeRe + `)?` + dateClose
 	}
-	ctx.dateRe = regexp.MustCompile(dateOpen + `(?:[^|\]]*\|)?(?:.*/)?(\d{4}-\d{2}-\d{2})` + dateClose)
+	ctx.dateRe = regexp.MustCompile(dateOpen + `(?:[^|\]]*\|)?(?:.*/)?` + `(` + ctx.formats.DateRe + `)` + dateClose)
 
 	// Marker prefix
 	ctx.markerPrefix = cfg.MarkerPrefix
@@ -137,7 +144,7 @@ func NewParseContext(cfg Config) *ParseContext {
 		ctx.markerPrefix = "::"
 	}
 	markerPrefixEscaped := regexp.QuoteMeta(ctx.markerPrefix)
-	ctx.markerRe = regexp.MustCompile(`(\w+)\s+\[\[(?:[^|\]]*\|)?(?:.*/)?(\d{4}-\d{2}-\d{2})\]\]\s*(\d{2}:\d{2})?`)
+	ctx.markerRe = regexp.MustCompile(`(\w+)\s+\[\[(?:[^|\]]*\|)?(?:.*/)?` + `(` + ctx.formats.DateRe + `)` + `\]\]\s*(` + ctx.formats.TimeRe + `)?`)
 	// markerStartRe matches the marker prefix followed by a keyword and [[ — used to find
 	// where markers begin in a line (avoids false positives from prefix appearing in body text).
 	ctx.markerStartRe = regexp.MustCompile(markerPrefixEscaped + `\s*\w+\s+\[\[`)
@@ -169,11 +176,6 @@ func DefaultParseContext() *ParseContext {
 	return NewParseContext(Config{})
 }
 
-// Keep package-level vars for backward compat in tests that use dateRe directly (e.g., cmdDefer).
-var (
-	defaultDateRe = regexp.MustCompile(`\(@\[\[(?:[^|\]]*\|)?(?:.*/)?(\d{4}-\d{2}-\d{2})\]\]\s*(\d{2}:\d{2})?\)`)
-)
-
 func ParseTask(match RawMatch, ctx *ParseContext) (Task, error) {
 	line := strings.TrimLeft(match.Text, " \t")
 	line = strings.TrimRight(line, "\n\r")
@@ -200,7 +202,7 @@ func ParseTask(match RawMatch, ctx *ParseContext) (Task, error) {
 		if dateStr == "" {
 			return Task{}, fmt.Errorf("empty date in line: %s", line)
 		}
-		d, err := time.Parse("2006-01-02", dateStr)
+		d, err := time.Parse(ctx.formats.GoDate, dateStr)
 		if err != nil {
 			return Task{}, fmt.Errorf("unparseable date %q: %w", dateStr, err)
 		}

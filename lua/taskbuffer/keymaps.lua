@@ -310,7 +310,9 @@ function M.setup_keymaps()
                 end
                 g:write(datetime .. "\t" .. task_content .. "\t" .. filepath .. "\t" .. linenumber)
                 g:close()
-                local start_suffix = " ::start " .. os.date("[[%F]] %R")
+                local fmts = config.formats
+                local start_suffix = " " .. fmts.marker_prefix .. "start [["
+                    .. os.date(fmts.date) .. "]] " .. os.date(fmts.time)
                 util.append_to_line(filepath, tonumber(linenumber), start_suffix)
             end, { buffer = true, desc = "Start task" })
 

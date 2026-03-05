@@ -9,7 +9,7 @@
 ---@field duration string duration template
 ---@field tag_prefix string prefix character for tags
 ---@field checkbox TaskbufferCheckbox checkbox markers
----@field date_wrapper string[] two-element array for date wrapping
+---@field date_wrapper string[] three-element array for date wrapping {open, wikilink_close, outer_close}
 ---@field marker_prefix string prefix for state markers
 
 ---@class TaskbufferGlobalKeymaps
@@ -101,7 +101,7 @@ M.defaults = {
         duration = "<{n}m>",
         tag_prefix = "#",
         checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]" },
-        date_wrapper = { "(@[[", "]])" },
+        date_wrapper = { "(@[[", "]]", ")" },
         marker_prefix = "::",
     },
 

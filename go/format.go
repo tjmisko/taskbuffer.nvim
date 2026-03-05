@@ -80,6 +80,7 @@ type FormatOpts struct {
 	MarkerPrefix  string            // prefix for marker display (default "::")
 	Horizons      []ResolvedHorizon // resolved horizons; nil uses defaults
 	Overlap       string            // "sorted", "first_match", "narrowest"
+	DateFormat    string            // Go layout for date display (default "2006-01-02")
 }
 
 func formatTaskLine(t Task, opts FormatOpts) string {
@@ -89,8 +90,12 @@ func formatTaskLine(t Task, opts FormatOpts) string {
 	fmt.Fprintf(&b, "%s:%d:1:", t.FilePath, t.LineNumber)
 
 	// Date
+	dateFmt := opts.DateFormat
+	if dateFmt == "" {
+		dateFmt = "2006-01-02"
+	}
 	if t.DueDate != nil {
-		fmt.Fprintf(&b, "\t[[%s]]", t.DueDate.Format("2006-01-02"))
+		fmt.Fprintf(&b, "\t[[%s]]", t.DueDate.Format(dateFmt))
 	} else {
 		b.WriteString("\t          ")
 	}

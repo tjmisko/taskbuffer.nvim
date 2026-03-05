@@ -375,6 +375,56 @@ func TestParseTask_UndatedWithTags(t *testing.T) {
 	}
 }
 
+func TestParseTask_ConfigDrivenDateWrapperWithTime(t *testing.T) {
+	cfg := Config{
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Lunch with Karah (@[[2026-03-04]] 13:00)",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Body != "Lunch with Karah" {
+		t.Errorf("body = %q, want %q", task.Body, "Lunch with Karah")
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+	if task.DueTime != "13:00" {
+		t.Errorf("time = %q, want 13:00", task.DueTime)
+	}
+}
+
+func TestParseTask_ConfigDrivenDateWrapperWithoutTime(t *testing.T) {
+	cfg := Config{
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Buy groceries (@[[2026-03-04]])",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Body != "Buy groceries" {
+		t.Errorf("body = %q, want %q", task.Body, "Buy groceries")
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+	if task.DueTime != "" {
+		t.Errorf("time = %q, want empty", task.DueTime)
+	}
+}
+
 func TestParseTask_UndatedWithDuration(t *testing.T) {
 	m := RawMatch{
 		Path:       "/notes/someday.md",
@@ -393,5 +443,202 @@ func TestParseTask_UndatedWithDuration(t *testing.T) {
 	}
 	if task.Duration != "60m" {
 		t.Errorf("duration = %q, want 60m", task.Duration)
+	}
+}
+
+// --- Custom date/time format tests ---
+
+func TestParseTask_CustomDateFormat_USDate(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%m/%d/%Y",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[03/04/2026]])",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Body != "Task" {
+		t.Errorf("body = %q, want %q", task.Body, "Task")
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+}
+
+func TestParseTask_CustomDateFormat_USDateWithTime(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%m/%d/%Y",
+		TimeFormat:  "%H:%M",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[03/04/2026]] 13:00)",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+	if task.DueTime != "13:00" {
+		t.Errorf("time = %q, want 13:00", task.DueTime)
+	}
+}
+
+func TestParseTask_CustomDateFormat_12HourTime(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%Y-%m-%d",
+		TimeFormat:  "%I:%M %p",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[2026-03-04]] 1:00 PM)",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.DueTime != "1:00 PM" {
+		t.Errorf("time = %q, want %q", task.DueTime, "1:00 PM")
+	}
+}
+
+func TestParseTask_CustomDateFormat_DotSeparatorEscaped(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%d.%m.%Y",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+
+	// Should parse correctly
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[04.03.2026]])",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+
+	// Dot must not act as wildcard — "04X03X2026" should NOT match
+	m2 := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[04X03X2026]])",
+	}
+	task2, err := ParseTask(m2, ctx)
+	if err != nil {
+		// Expected: no date found
+		return
+	}
+	if task2.DueDate != nil {
+		t.Errorf("should not match with X separators, got date %v", task2.DueDate)
+	}
+}
+
+func TestParseTask_CustomDateFormat_CompactNoSeparators(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%Y%m%d",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[20260304]])",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+}
+
+func TestParseTask_CustomDateFormat_DateInBodyNotCaptured(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%m/%d/%Y",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Meeting re: 01/01/2026 invoice (@[[03/04/2026]])",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Body != "Meeting re: 01/01/2026 invoice" {
+		t.Errorf("body = %q", task.Body)
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
+	}
+}
+
+func TestParseTask_CustomDateFormat_MarkersWithCustomFormat(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%m/%d/%Y",
+		TimeFormat:  "%I:%M %p",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [x] Task (@[[03/04/2026]]) ::start [[03/04/2026]] 1:00 PM ::complete [[03/04/2026]] 2:30 PM",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(task.Markers) != 2 {
+		t.Fatalf("markers count = %d, want 2", len(task.Markers))
+	}
+	if task.Markers[0].Kind != "start" || task.Markers[0].Date != "03/04/2026" || task.Markers[0].Time != "1:00 PM" {
+		t.Errorf("marker[0] = %+v", task.Markers[0])
+	}
+	if task.Markers[1].Kind != "complete" || task.Markers[1].Date != "03/04/2026" || task.Markers[1].Time != "2:30 PM" {
+		t.Errorf("marker[1] = %+v", task.Markers[1])
+	}
+}
+
+func TestParseTask_CustomDateFormat_WikilinkAlias(t *testing.T) {
+	cfg := Config{
+		DateFormat:  "%m/%d/%Y",
+		DateWrapper: []string{"(@[[", "]]", ")"},
+	}
+	ctx := NewParseContext(cfg)
+	m := RawMatch{
+		Path:       "/notes/test.md",
+		LineNumber: 1,
+		Text:       "- [ ] Task (@[[some-id|03/04/2026]])",
+	}
+	task, err := ParseTask(m, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.DueDate == nil || !task.DueDate.Equal(mustDate("2026-03-04")) {
+		t.Errorf("date = %v, want 2026-03-04", task.DueDate)
 	}
 }

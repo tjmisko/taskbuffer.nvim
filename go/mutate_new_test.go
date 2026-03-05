@@ -32,7 +32,7 @@ func TestRemoveLastMarker(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [-] Task (@[[2026-02-17]]) ::irrelevant [[2026-02-18]] 10:00\n"), 0644)
 
-	err := RemoveLastMarker(path, 1, "irrelevant")
+	err := RemoveLastMarker(path, 1, "irrelevant", ResolveDateTimeFormats("", ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestRemoveLastMarker_MultipleMarkers(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [-] Task ::irrelevant [[2026-02-17]] 09:00 ::irrelevant [[2026-02-18]] 10:00\n"), 0644)
 
-	err := RemoveLastMarker(path, 1, "irrelevant")
+	err := RemoveLastMarker(path, 1, "irrelevant", ResolveDateTimeFormats("", ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestCmdDefer(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [ ] Deferred task (@[[2026-02-17]])\n"), 0644)
 
-	err := cmdDefer([]string{path, "1"})
+	err := cmdDefer(DefaultParseContext(), []string{path, "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestCmdDefer_PreservesOriginal(t *testing.T) {
 	path := filepath.Join(dir, "test.md")
 	os.WriteFile(path, []byte("- [ ] Task (@[[2026-02-20]]) ::original [[2026-02-17]]\n"), 0644)
 
-	err := cmdDefer([]string{path, "1"})
+	err := cmdDefer(DefaultParseContext(), []string{path, "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
