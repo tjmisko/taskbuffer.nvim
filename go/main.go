@@ -30,6 +30,75 @@ func (s *sourceList) Set(val string) error {
 	return nil
 }
 
+// FrontmatterConfig holds configurable frontmatter key names and behavior.
+type FrontmatterConfig struct {
+	DueKey      string   `json:"due_key"`
+	InheritDue  *bool    `json:"inherit_due"`
+	RequireTags []string `json:"require_tags"`
+	StatusKey   string   `json:"status_key"`
+	DoneValues  []string `json:"done_values"`
+}
+
+// DueKeyResolved returns the configured due key or the default "due".
+func (fc FrontmatterConfig) DueKeyResolved() string {
+	if fc.DueKey != "" {
+		return fc.DueKey
+	}
+	return "due"
+}
+
+// InheritDueResolved returns whether due date inheritance is enabled (default true).
+func (fc FrontmatterConfig) InheritDueResolved() bool {
+	if fc.InheritDue != nil {
+		return *fc.InheritDue
+	}
+	return true
+}
+
+// RequireTagsResolved returns the required tags or nil.
+func (fc FrontmatterConfig) RequireTagsResolved() []string {
+	return fc.RequireTags
+}
+
+// StatusKeyResolved returns the configured status key or the default "status".
+func (fc FrontmatterConfig) StatusKeyResolved() string {
+	if fc.StatusKey != "" {
+		return fc.StatusKey
+	}
+	return "status"
+}
+
+// DoneValuesResolved returns the configured done values or defaults.
+func (fc FrontmatterConfig) DoneValuesResolved() []string {
+	if len(fc.DoneValues) > 0 {
+		return fc.DoneValues
+	}
+	return []string{"done", "complete"}
+}
+
+// DateError represents an invalid date found during parsing.
+type DateError struct {
+	FilePath   string // source file
+	LineNumber int    // 0 for frontmatter-level errors
+	DateStr    string // the raw string that failed to parse
+	Context    string // "inline due date", "frontmatter due", "marker (start)", etc.
+	Err        error  // underlying parse error
+}
+
+func (e DateError) Error() string {
+	if e.LineNumber > 0 {
+		return fmt.Sprintf("date error: %s:%d: invalid %s %q: %v", e.FilePath, e.LineNumber, e.Context, e.DateStr, e.Err)
+	}
+	return fmt.Sprintf("date error: %s: invalid %s %q: %v", e.FilePath, e.Context, e.DateStr, e.Err)
+}
+
+// collectDateError appends a DateError to the collector if non-nil.
+func collectDateError(errs *[]DateError, e DateError) {
+	if errs != nil {
+		*errs = append(*errs, e)
+	}
+}
+
 // Config holds runtime configuration passed via --config JSON.
 type Config struct {
 	StateDir        string            `json:"state_dir"`
@@ -42,6 +111,8 @@ type Config struct {
 	Horizons        []HorizonSpec     `json:"horizons,omitempty"`
 	HorizonsOverlap string            `json:"horizons_overlap,omitempty"`
 	WeekStart       string            `json:"week_start,omitempty"`
+	Frontmatter     FrontmatterConfig `json:"frontmatter,omitempty"`
+	Strict          bool              `json:"strict,omitempty"`
 }
 
 // Verbose controls whether parse warnings are printed to stderr.
@@ -102,6 +173,11 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) 
 		return err
 	}
 
+	var dateErrors []DateError
+	if ctx.strict {
+		ctx.dateErrors = &dateErrors
+	}
+
 	matches, err := Scan(ctx, notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
@@ -109,8 +185,10 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) 
 
 	allTasks := ParseTasks(matches, ctx)
 	MergeFrontmatterTags(allTasks)
+	allTasks = FilterCompletedFrontmatterTasks(allTasks, cfg.Frontmatter)
+	MergeFrontmatterDue(allTasks, cfg.Frontmatter, ctx.formats.GoDate, ctx.dateErrors)
 
-	projectTasks, err := ScanProjects(ctx.formats.GoDate, notesPaths...)
+	projectTasks, err := ScanProjects(ctx.formats.GoDate, cfg.Frontmatter, ctx.dateErrors, notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan projects: %w", err)
 	}
@@ -121,6 +199,13 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) 
 		if t.Status == "open" {
 			tasks = append(tasks, t)
 		}
+	}
+
+	if ctx.strict && len(dateErrors) > 0 {
+		for _, e := range dateErrors {
+			fmt.Fprintf(os.Stderr, "%s\n", e.Error())
+		}
+		return fmt.Errorf("%d invalid date(s) found", len(dateErrors))
 	}
 
 	now := time.Now().In(time.Local)
@@ -164,6 +249,9 @@ func cmdDo(notesPaths []string, ctx *ParseContext, cfg Config) error {
 		return fmt.Errorf("scan: %w", err)
 	}
 	allTasks := ParseTasks(matches, ctx)
+	MergeFrontmatterTags(allTasks)
+	allTasks = FilterCompletedFrontmatterTasks(allTasks, cfg.Frontmatter)
+	MergeFrontmatterDue(allTasks, cfg.Frontmatter, ctx.formats.GoDate, nil)
 	var todayTasks []Task
 	for _, t := range allTasks {
 		if t.Status == "open" && t.DueDate != nil && t.DueDate.Format(ctx.formats.GoDate) == today {
@@ -292,7 +380,7 @@ func cmdCurrent(cfg Config) error {
 	return nil
 }
 
-func cmdTags(notesPaths []string, ctx *ParseContext) error {
+func cmdTags(notesPaths []string, ctx *ParseContext, cfg Config) error {
 	matches, err := Scan(ctx, notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
@@ -301,7 +389,7 @@ func cmdTags(notesPaths []string, ctx *ParseContext) error {
 	allTasks := ParseTasks(matches, ctx)
 	MergeFrontmatterTags(allTasks)
 
-	projectTasks, err := ScanProjects(ctx.formats.GoDate, notesPaths...)
+	projectTasks, err := ScanProjects(ctx.formats.GoDate, cfg.Frontmatter, nil, notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan projects: %w", err)
 	}
@@ -581,7 +669,7 @@ func main() {
 	case "current":
 		err = cmdCurrent(cfg)
 	case "tags":
-		err = cmdTags(notesPaths, ctx)
+		err = cmdTags(notesPaths, ctx, cfg)
 	case "defer":
 		err = cmdDefer(ctx, subArgs)
 	case "irrelevant":

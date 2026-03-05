@@ -51,13 +51,16 @@ end
 
 --- Bulk-shift due dates for multiple taskfile lines.
 --- Groups edits by source file and processes from bottom-up to avoid line drift.
+--- Falls back to frontmatter due date for undated tasks (deduplicated per file).
 ---@param lines string[]
 ---@param days integer
 local function shift_task_dates_bulk(lines, days)
     local buffer = require("taskbuffer.buffer")
+    local cfg = get_config()
     local edits_by_file = {}
     local all_edits = {}
     local shifted = 0
+    local fm_shifted_files = {} -- track FM edits to deduplicate per file
     for _, line in ipairs(lines) do
         local filepath, linenumber = util.parse_taskfile_line(line)
         if filepath and linenumber then
@@ -73,6 +76,16 @@ local function shift_task_dates_bulk(lines, days)
                     table.insert(edits_by_file[filepath], edit)
                     all_edits[#all_edits + 1] = edit
                     shifted = shifted + 1
+                elseif cfg.frontmatter and cfg.frontmatter.inherit_due and not fm_shifted_files[filepath] then
+                    local due_key = cfg.frontmatter.due_key or "due"
+                    local fm_new_date, fm_line, old_fm_line, new_fm_line =
+                        util.shift_frontmatter_due(filepath, days, due_key)
+                    if fm_new_date then
+                        fm_shifted_files[filepath] = true
+                        all_edits[#all_edits + 1] =
+                            { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line }
+                        shifted = shifted + 1
+                    end
                 end
             end
         end
@@ -81,7 +94,7 @@ local function shift_task_dates_bulk(lines, days)
         vim.notify("[taskbuffer] no dated tasks in selection", vim.log.levels.WARN)
         return
     end
-    -- Apply edits per file, sorted by line number descending to avoid drift
+    -- Apply inline edits per file, sorted by line number descending to avoid drift
     for _, edits in pairs(edits_by_file) do
         table.sort(edits, function(a, b)
             return a.linenumber > b.linenumber
@@ -90,6 +103,7 @@ local function shift_task_dates_bulk(lines, days)
             util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
         end
     end
+    -- FM edits were already applied in shift_frontmatter_due
     local direction = days > 0 and "forward" or "back"
     local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
     require("taskbuffer.undo").push({ op = op, edits = all_edits, timestamp = os.time() })
@@ -114,6 +128,7 @@ end
 
 local function shift_task_date_in_taskfile(days)
     local buffer = require("taskbuffer.buffer")
+    local cfg = get_config()
     local line = vim.api.nvim_get_current_line()
     local filepath, linenumber = util.parse_taskfile_line(line)
     if not filepath or not linenumber then
@@ -126,29 +141,51 @@ local function shift_task_date_in_taskfile(days)
         return
     end
     local new_line, new_date = util.shift_date_in_string(source_line, days)
-    if not new_line then
-        vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
+    if new_line then
+        util.replace_line_in_file(filepath, linenumber, new_line)
+        local direction = days > 0 and "forward" or "back"
+        local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
+        require("taskbuffer.undo").push({
+            op = op,
+            edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
+            timestamp = os.time(),
+        })
+        buffer.refresh_and_restore_cursor()
+        vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
         return
     end
-    util.replace_line_in_file(filepath, linenumber, new_line)
-    local direction = days > 0 and "forward" or "back"
-    local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
-    require("taskbuffer.undo").push({
-        op = op,
-        edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
-        timestamp = os.time(),
-    })
-    buffer.refresh_and_restore_cursor()
-    vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+
+    -- Fallback: shift frontmatter due date
+    if cfg.frontmatter and cfg.frontmatter.inherit_due then
+        local due_key = cfg.frontmatter.due_key or "due"
+        local fm_new_date, fm_line, old_fm_line, new_fm_line = util.shift_frontmatter_due(filepath, days, due_key)
+        if fm_new_date then
+            local direction = days > 0 and "forward" or "back"
+            local op = "shift FM " .. direction .. " " .. math.abs(days) .. " day(s)"
+            require("taskbuffer.undo").push({
+                op = op,
+                edits = { { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line } },
+                timestamp = os.time(),
+            })
+            buffer.refresh_and_restore_cursor()
+            vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
+            return
+        end
+    end
+
+    vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
 end
 
 --- Bulk-set due dates to today for multiple taskfile lines.
+--- Falls back to frontmatter due date for undated tasks (deduplicated per file).
 ---@param lines string[]
 local function set_task_dates_today_bulk(lines)
     local buffer = require("taskbuffer.buffer")
+    local cfg = get_config()
     local edits_by_file = {}
     local all_edits = {}
     local updated = 0
+    local fm_set_files = {} -- track FM edits to deduplicate per file
     for _, line in ipairs(lines) do
         local filepath, linenumber = util.parse_taskfile_line(line)
         if filepath and linenumber then
@@ -164,6 +201,16 @@ local function set_task_dates_today_bulk(lines)
                     table.insert(edits_by_file[filepath], edit)
                     all_edits[#all_edits + 1] = edit
                     updated = updated + 1
+                elseif cfg.frontmatter and cfg.frontmatter.inherit_due and not fm_set_files[filepath] then
+                    local due_key = cfg.frontmatter.due_key or "due"
+                    local fm_new_date, fm_line, old_fm_line, new_fm_line =
+                        util.set_frontmatter_due_today(filepath, due_key)
+                    if fm_new_date then
+                        fm_set_files[filepath] = true
+                        all_edits[#all_edits + 1] =
+                            { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line }
+                        updated = updated + 1
+                    end
                 end
             end
         end
@@ -180,6 +227,7 @@ local function set_task_dates_today_bulk(lines)
             util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
         end
     end
+    -- FM edits were already applied in set_frontmatter_due_today
     require("taskbuffer.undo").push({ op = "set today", edits = all_edits, timestamp = os.time() })
     buffer.refresh_and_restore_cursor()
     vim.notify("[taskbuffer] set " .. updated .. " task(s) to today", vim.log.levels.INFO)
@@ -187,6 +235,7 @@ end
 
 local function set_date_today_in_taskfile()
     local buffer = require("taskbuffer.buffer")
+    local cfg = get_config()
     local line = vim.api.nvim_get_current_line()
     local filepath, linenumber = util.parse_taskfile_line(line)
     if not filepath or not linenumber then
@@ -199,40 +248,90 @@ local function set_date_today_in_taskfile()
         return
     end
     local new_line, new_date = util.set_date_today_in_string(source_line)
-    if not new_line then
-        vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
+    if new_line then
+        util.replace_line_in_file(filepath, linenumber, new_line)
+        require("taskbuffer.undo").push({
+            op = "set today",
+            edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
+            timestamp = os.time(),
+        })
+        buffer.refresh_and_restore_cursor()
+        vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
         return
     end
-    util.replace_line_in_file(filepath, linenumber, new_line)
-    require("taskbuffer.undo").push({
-        op = "set today",
-        edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
-        timestamp = os.time(),
-    })
-    buffer.refresh_and_restore_cursor()
-    vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+
+    -- Fallback: set frontmatter due date to today
+    if cfg.frontmatter and cfg.frontmatter.inherit_due then
+        local due_key = cfg.frontmatter.due_key or "due"
+        local fm_new_date, fm_line, old_fm_line, new_fm_line = util.set_frontmatter_due_today(filepath, due_key)
+        if fm_new_date then
+            require("taskbuffer.undo").push({
+                op = "set FM today",
+                edits = { { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line } },
+                timestamp = os.time(),
+            })
+            buffer.refresh_and_restore_cursor()
+            vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
+            return
+        end
+    end
+
+    vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
 end
 
 local function set_date_today_in_markdown()
+    local cfg = get_config()
     local line = vim.api.nvim_get_current_line()
     local new_line, new_date = util.set_date_today_in_string(line)
-    if not new_line then
-        vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
+    if new_line then
+        vim.api.nvim_set_current_line(new_line)
+        vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
         return
     end
-    vim.api.nvim_set_current_line(new_line)
-    vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+
+    -- Fallback: set frontmatter due date to today, jump cursor to FM line
+    if cfg.frontmatter and cfg.frontmatter.inherit_due then
+        local filepath = vim.api.nvim_buf_get_name(0)
+        local due_key = cfg.frontmatter.due_key or "due"
+        local fm_line_num, _, _ = util.find_frontmatter_due_line(filepath, due_key)
+        if fm_line_num then
+            local fm_new_date, _, _, new_fm_line = util.set_frontmatter_due_today(filepath, due_key)
+            if fm_new_date then
+                vim.cmd("edit!")
+                vim.api.nvim_win_set_cursor(0, { fm_line_num, 0 })
+                vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
+                return
+            end
+        end
+    end
+
+    vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
 end
 
 local function shift_task_date_in_markdown(days)
+    local cfg = get_config()
     local line = vim.api.nvim_get_current_line()
     local new_line, new_date = util.shift_date_in_string(line, days)
-    if not new_line then
-        vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
+    if new_line then
+        vim.api.nvim_set_current_line(new_line)
+        vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
         return
     end
-    vim.api.nvim_set_current_line(new_line)
-    vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+
+    -- Fallback: shift frontmatter due date, jump cursor to FM line
+    if cfg.frontmatter and cfg.frontmatter.inherit_due then
+        local filepath = vim.api.nvim_buf_get_name(0)
+        local due_key = cfg.frontmatter.due_key or "due"
+        local fm_new_date, fm_line_num = util.shift_frontmatter_due(filepath, days, due_key)
+        if fm_new_date then
+            vim.cmd("edit!")
+            vim.api.nvim_win_set_cursor(0, { fm_line_num, 0 })
+            vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
+            return
+        end
+    end
+
+    vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
 end
 
 function M.setup_keymaps()

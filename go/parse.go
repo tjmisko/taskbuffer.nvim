@@ -18,6 +18,7 @@ type Task struct {
 	Tags       []string
 	Status     string // "open", "done", "irrelevant"
 	Markers    []Marker
+	SortLast   bool // synthetic tasks (projects) sort after real tasks
 }
 
 type Marker struct {
@@ -40,6 +41,8 @@ type ParseContext struct {
 	scanPattern   string            // rg pattern for scanning
 	checkbox      map[string]string // status_name -> checkbox string (for mutations)
 	formats       DateTimeFormats   // resolved date/time formats
+	strict        bool              // when true, collect date errors instead of skipping
+	dateErrors    *[]DateError      // collector for date validation errors (nil = ignore)
 }
 
 // NewParseContext builds a ParseContext from a Config, falling back to defaults
@@ -47,6 +50,7 @@ type ParseContext struct {
 func NewParseContext(cfg Config) *ParseContext {
 	ctx := &ParseContext{
 		durationRe: regexp.MustCompile(`<(\d+)m>`),
+		strict:     cfg.Strict,
 	}
 
 	// Checkbox config
@@ -204,10 +208,22 @@ func ParseTask(match RawMatch, ctx *ParseContext) (Task, error) {
 		}
 		d, err := time.Parse(ctx.formats.GoDate, dateStr)
 		if err != nil {
-			return Task{}, fmt.Errorf("unparseable date %q: %w", dateStr, err)
+			if ctx.strict {
+				collectDateError(ctx.dateErrors, DateError{
+					FilePath:   match.Path,
+					LineNumber: match.LineNumber,
+					DateStr:    dateStr,
+					Context:    "inline due date",
+					Err:        err,
+				})
+				// treat as undated — continue parsing body/tags/markers
+			} else {
+				return Task{}, fmt.Errorf("unparseable date %q: %w", dateStr, err)
+			}
+		} else {
+			dueDate = &d
+			dueTime = dateMatch[2]
 		}
-		dueDate = &d
-		dueTime = dateMatch[2]
 		dateGroupIdx = strings.Index(line, dateGroupFull)
 	}
 
@@ -238,6 +254,18 @@ func ParseTask(match RawMatch, ctx *ParseContext) (Task, error) {
 		}
 		mm := ctx.markerRe.FindStringSubmatch(seg)
 		if mm != nil {
+			if ctx.strict && mm[2] != "" {
+				_, err := time.Parse(ctx.formats.GoDate, mm[2])
+				if err != nil {
+					collectDateError(ctx.dateErrors, DateError{
+						FilePath:   match.Path,
+						LineNumber: match.LineNumber,
+						DateStr:    mm[2],
+						Context:    fmt.Sprintf("marker (%s)", mm[1]),
+						Err:        err,
+					})
+				}
+			}
 			markers = append(markers, Marker{
 				Kind: mm[1],
 				Date: mm[2],
