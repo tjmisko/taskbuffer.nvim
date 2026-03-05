@@ -1,0 +1,29 @@
+# E2E test: vim-plug installation
+# Two-stage: build Go binary, then test vim-plug plugin loading.
+FROM golang:1.22-alpine AS builder
+WORKDIR /build
+COPY go/ .
+RUN go build -o task_bin .
+
+FROM alpine:edge
+
+RUN apk add --no-cache neovim ripgrep git curl
+
+# Copy plugin source with pre-built binary
+COPY lua/ /plugin/lua/
+COPY go/ /plugin/go/
+COPY --from=builder /build/task_bin /plugin/go/task_bin
+COPY plugin/ /plugin/plugin/
+COPY syntax/ /plugin/syntax/
+COPY ftdetect/ /plugin/ftdetect/
+COPY doc/ /plugin/doc/
+COPY tests/e2e/ /plugin/tests/e2e/
+
+# Sample notes
+RUN mkdir -p /root/Documents/Notes
+COPY tests/e2e/sample_notes/ /root/Documents/Notes/
+
+# State directory
+RUN mkdir -p /root/.local/state/task
+
+ENTRYPOINT ["nvim", "--headless", "-u", "/plugin/tests/e2e/vimplug_test.lua"]
