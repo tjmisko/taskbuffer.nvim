@@ -96,6 +96,6 @@ func ClearCurrentTaskFrom(stateDir string) error {
 	return err
 }
 
-func FormatMarker(kind string, now time.Time) string {
-	return fmt.Sprintf("::%-s [[%s]] %s ", kind, now.Format("2006-01-02"), now.Format("15:04"))
+func FormatMarker(kind string, now time.Time, fmts DateTimeFormats) string {
+	return fmt.Sprintf("::%-s [[%s]] %s ", kind, now.Format(fmts.GoDate), now.Format(fmts.GoTime))
 }

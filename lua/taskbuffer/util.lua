@@ -75,19 +75,144 @@ function M.append_to_line(path, target_line, suffix)
     f:close()
 end
 
+--- Build a Lua pattern + os.date format from the configured date format.
+--- Returns: lua_pattern (with captures for date components), strftime format,
+--- and the open/close wrapper strings.
+---@return string lua_pattern  e.g. "(%d%d%d%d)%-(%d%d)%-(%d%d)"
+---@return string strftime     e.g. "%Y-%m-%d"
+---@return string open         e.g. "(@[["
+---@return string close        e.g. "]]"
+local function resolve_date_config()
+    local cfg = require("taskbuffer.config").values.formats
+    local date_fmt = cfg.date or "%Y-%m-%d"
+    local wrapper = cfg.date_wrapper or { "(@[[", "]]", ")" }
+    local open = wrapper[1] or "(@[["
+    local close = wrapper[2] or "]]"
+
+    -- Build Lua pattern from strftime: replace directives with capture groups,
+    -- escape Lua magic chars in literals.
+    local lua_magic = "([%.%^%$%(%)%[%]%*%+%-%?%%])"
+    local pattern = ""
+    local i = 1
+    while i <= #date_fmt do
+        local ch = date_fmt:sub(i, i)
+        if ch == "%" and i < #date_fmt then
+            local directive = date_fmt:sub(i + 1, i + 1)
+            if directive == "Y" then
+                pattern = pattern .. "(%d%d%d%d)"
+            elseif directive == "m" or directive == "d" then
+                pattern = pattern .. "(%d%d)"
+            elseif directive == "F" then
+                pattern = pattern .. "(%d%d%d%d)%-(%d%d)%-(%d%d)"
+            elseif directive == "%" then
+                pattern = pattern .. "%%"
+            else
+                pattern = pattern .. "%%" .. directive
+            end
+            i = i + 2
+        else
+            pattern = pattern .. ch:gsub(lua_magic, "%%%1")
+            i = i + 1
+        end
+    end
+
+    return pattern, date_fmt, open, close
+end
+
+--- Parse date components from a date string using the configured format.
+--- Returns year, month, day as numbers, or nil if parsing fails.
+---@param date_str string
+---@return number|nil year
+---@return number|nil month
+---@return number|nil day
+local function parse_date_components(date_str)
+    local cfg = require("taskbuffer.config").values.formats
+    local date_fmt = cfg.date or "%Y-%m-%d"
+
+    -- Determine capture order from the format string
+    local order = {}
+    local i = 1
+    while i <= #date_fmt do
+        local ch = date_fmt:sub(i, i)
+        if ch == "%" and i < #date_fmt then
+            local d = date_fmt:sub(i + 1, i + 1)
+            if d == "Y" then
+                order[#order + 1] = "Y"
+            elseif d == "m" then
+                order[#order + 1] = "m"
+            elseif d == "d" then
+                order[#order + 1] = "d"
+            elseif d == "F" then
+                order[#order + 1] = "Y"
+                order[#order + 1] = "m"
+                order[#order + 1] = "d"
+            end
+            i = i + 2
+        else
+            i = i + 1
+        end
+    end
+
+    local pattern = resolve_date_config()
+    local captures = { date_str:match(pattern) }
+    if #captures == 0 then
+        return nil, nil, nil
+    end
+
+    local y, m, d
+    for idx, cap in ipairs(captures) do
+        local key = order[idx]
+        if key == "Y" then
+            y = tonumber(cap)
+        elseif key == "m" then
+            m = tonumber(cap)
+        elseif key == "d" then
+            d = tonumber(cap)
+        end
+    end
+    return y, m, d
+end
+
 --- Shift the due date in a task line string by a number of days.
 ---@param line string
 ---@param days integer
 ---@return string|nil new_line
 ---@return string|nil new_date
 function M.shift_date_in_string(line, days)
-    local prefix, y, m, d, suffix = line:match("^(.-%(@%[%[)(%d%d%d%d)%-(%d%d)%-(%d%d)(%]%].*)$")
+    local date_pattern, date_fmt, open, close = resolve_date_config()
+    local open_escaped = open:gsub("([%.%^%$%(%)%[%]%*%+%-%?%%])", "%%%1")
+    local close_escaped = close:gsub("([%.%^%$%(%)%[%]%*%+%-%?%%])", "%%%1")
+
+    -- Match: everything up to and including the open wrapper, then the date, then close wrapper onward
+    local full_pattern = "^(.-" .. open_escaped .. ")" .. date_pattern .. "(" .. close_escaped .. ".*)$"
+    local captures = { line:match(full_pattern) }
+    if #captures == 0 then
+        return nil, nil
+    end
+
+    local prefix = captures[1]
+    local suffix = captures[#captures]
+    -- Extract date components from the middle captures
+    local date_captures = {}
+    for i = 2, #captures - 1 do
+        date_captures[#date_captures + 1] = captures[i]
+    end
+
+    -- Parse the date string that was matched
+    local matched_date = table.concat(date_captures)
+    -- Re-extract from the full match to get the actual date substring
+    local date_start = #prefix + 1
+    local date_end = #line - #suffix
+    local date_str = line:sub(date_start, date_end)
+
+    local y, m, d = parse_date_components(date_str)
     if not y then
         return nil, nil
     end
-    local t = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d) })
+
+    local t = os.time({ year = y, month = m, day = d })
     local new_t = t + days * 86400
-    local new_date = os.date("%Y-%m-%d", new_t)
+    local new_date = os.date(date_fmt, new_t)
     return prefix .. new_date .. suffix, new_date
 end
 
@@ -96,11 +221,19 @@ end
 ---@return string|nil new_line
 ---@return string|nil new_date
 function M.set_date_today_in_string(line)
-    local prefix, _, _, _, suffix = line:match("^(.-%(@%[%[)(%d%d%d%d)%-(%d%d)%-(%d%d)(%]%].*)$")
-    if not prefix then
+    local date_pattern, date_fmt, open, close = resolve_date_config()
+    local open_escaped = open:gsub("([%.%^%$%(%)%[%]%*%+%-%?%%])", "%%%1")
+    local close_escaped = close:gsub("([%.%^%$%(%)%[%]%*%+%-%?%%])", "%%%1")
+
+    local full_pattern = "^(.-" .. open_escaped .. ")" .. date_pattern .. "(" .. close_escaped .. ".*)$"
+    local captures = { line:match(full_pattern) }
+    if #captures == 0 then
         return nil, nil
     end
-    local today = os.date("%Y-%m-%d")
+
+    local prefix = captures[1]
+    local suffix = captures[#captures]
+    local today = os.date(date_fmt)
     return prefix .. today .. suffix, today
 end
 

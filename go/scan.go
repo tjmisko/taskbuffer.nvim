@@ -156,8 +156,8 @@ func Scan(ctx *ParseContext, notesPaths ...string) ([]RawMatch, error) {
 }
 
 // ScanProjects finds markdown files with "project" in frontmatter tags and a due date,
-// returning them as Task entries.
-func ScanProjects(notesPaths ...string) ([]Task, error) {
+// returning them as Task entries. goDateFmt is the Go time layout for parsing dates.
+func ScanProjects(goDateFmt string, notesPaths ...string) ([]Task, error) {
 	paths := expandGlobs(notesPaths)
 	if len(paths) == 0 {
 		return nil, nil
@@ -206,7 +206,7 @@ func ScanProjects(notesPaths ...string) ([]Task, error) {
 		var dueDate time.Time
 		var dueTime string
 		parts := strings.SplitN(fm.Due, " ", 2)
-		dueDate, err = time.Parse("2006-01-02", parts[0])
+		dueDate, err = time.Parse(goDateFmt, parts[0])
 		if err != nil {
 			continue
 		}

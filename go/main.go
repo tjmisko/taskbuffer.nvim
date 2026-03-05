@@ -110,7 +110,7 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) 
 	allTasks := ParseTasks(matches, ctx)
 	MergeFrontmatterTags(allTasks)
 
-	projectTasks, err := ScanProjects(notesPaths...)
+	projectTasks, err := ScanProjects(ctx.formats.GoDate, notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan projects: %w", err)
 	}
@@ -139,6 +139,7 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) 
 		TagPrefix:     ctx.tagPrefix,
 		Horizons:      horizons,
 		Overlap:       overlap,
+		DateFormat:    ctx.formats.GoDate,
 	}
 	fmt.Print(FormatTaskfile(tasks, now, opts))
 	return nil
@@ -146,7 +147,7 @@ func cmdList(notesPaths []string, ctx *ParseContext, args []string, cfg Config) 
 
 func cmdDo(notesPaths []string, ctx *ParseContext, cfg Config) error {
 	now := time.Now().In(time.Local)
-	today := now.Format("2006-01-02")
+	today := now.Format(ctx.formats.GoDate)
 
 	existing, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
@@ -165,7 +166,7 @@ func cmdDo(notesPaths []string, ctx *ParseContext, cfg Config) error {
 	allTasks := ParseTasks(matches, ctx)
 	var todayTasks []Task
 	for _, t := range allTasks {
-		if t.Status == "open" && t.DueDate != nil && t.DueDate.Format("2006-01-02") == today {
+		if t.Status == "open" && t.DueDate != nil && t.DueDate.Format(ctx.formats.GoDate) == today {
 			todayTasks = append(todayTasks, t)
 		}
 	}
@@ -197,7 +198,7 @@ func cmdDo(notesPaths []string, ctx *ParseContext, cfg Config) error {
 	}
 	task := todayTasks[idx]
 
-	marker := FormatMarker("start", now)
+	marker := FormatMarker("start", now, ctx.formats)
 	if err := AppendToLine(task.FilePath, task.LineNumber, marker); err != nil {
 		return fmt.Errorf("writing start marker: %w", err)
 	}
@@ -218,6 +219,7 @@ func cmdDo(notesPaths []string, ctx *ParseContext, cfg Config) error {
 
 func cmdStopWithConfig(cfg Config) error {
 	now := time.Now().In(time.Local)
+	fmts := ResolveDateTimeFormats(cfg.DateFormat, cfg.TimeFormat)
 
 	ct, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
@@ -228,7 +230,7 @@ func cmdStopWithConfig(cfg Config) error {
 		return nil
 	}
 
-	marker := FormatMarker("stop", now)
+	marker := FormatMarker("stop", now, fmts)
 	if err := AppendToLine(ct.FilePath, ct.LineNumber, marker); err != nil {
 		return fmt.Errorf("writing stop marker: %w", err)
 	}
@@ -247,6 +249,7 @@ func cmdStop() error {
 
 func cmdCompleteWithConfig(cfg Config) error {
 	now := time.Now().In(time.Local)
+	fmts := ResolveDateTimeFormats(cfg.DateFormat, cfg.TimeFormat)
 
 	ct, err := ReadCurrentTaskFrom(cfg.StateDir)
 	if err != nil {
@@ -257,7 +260,7 @@ func cmdCompleteWithConfig(cfg Config) error {
 		return nil
 	}
 
-	marker := FormatMarker("complete", now)
+	marker := FormatMarker("complete", now, fmts)
 	if err := AppendToLine(ct.FilePath, ct.LineNumber, marker); err != nil {
 		return fmt.Errorf("writing complete marker: %w", err)
 	}
@@ -298,7 +301,7 @@ func cmdTags(notesPaths []string, ctx *ParseContext) error {
 	allTasks := ParseTasks(matches, ctx)
 	MergeFrontmatterTags(allTasks)
 
-	projectTasks, err := ScanProjects(notesPaths...)
+	projectTasks, err := ScanProjects(ctx.formats.GoDate, notesPaths...)
 	if err != nil {
 		return fmt.Errorf("scan projects: %w", err)
 	}
@@ -327,7 +330,7 @@ func cmdTags(notesPaths []string, ctx *ParseContext) error {
 }
 
 // cmdDefer adds a ::deferral marker and preserves the original date.
-func cmdDefer(args []string) error {
+func cmdDefer(ctx *ParseContext, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: task defer <filepath> <linenum>")
 	}
@@ -355,7 +358,7 @@ func cmdDefer(args []string) error {
 	// If no ::original marker, copy the current date as ::original
 	if !strings.Contains(line, "::original") {
 		// Extract the current due date from the line
-		dateMatch := defaultDateRe.FindStringSubmatch(line)
+		dateMatch := ctx.dateRe.FindStringSubmatch(line)
 		if dateMatch != nil {
 			originalMarker := fmt.Sprintf(" ::original [[%s]]", dateMatch[1])
 			line = strings.TrimRight(line, " \t") + originalMarker
@@ -363,7 +366,7 @@ func cmdDefer(args []string) error {
 	}
 
 	// Append ::deferral marker
-	deferralMarker := FormatMarker("deferral", now)
+	deferralMarker := FormatMarker("deferral", now, ctx.formats)
 	line = strings.TrimRight(line, " \t") + " " + deferralMarker
 	lines[idx] = line
 
@@ -382,7 +385,7 @@ func cmdIrrelevant(ctx *ParseContext, args []string) error {
 	}
 
 	now := time.Now().In(time.Local)
-	marker := FormatMarker("irrelevant", now)
+	marker := FormatMarker("irrelevant", now, ctx.formats)
 
 	openCb := ctx.checkbox["open"]
 	irrCb := ctx.checkbox["irrelevant"]
@@ -418,7 +421,7 @@ func cmdUnset(ctx *ParseContext, args []string) error {
 	openCb := ctx.checkbox["open"]
 
 	if strings.Contains(line, ctx.markerPrefix+"irrelevant") {
-		if err := RemoveLastMarker(filePath, lineNum, "irrelevant"); err != nil {
+		if err := RemoveLastMarker(filePath, lineNum, "irrelevant", ctx.formats); err != nil {
 			return err
 		}
 		return ChangeCheckbox(filePath, lineNum, ctx.checkbox["irrelevant"], openCb)
@@ -453,7 +456,7 @@ func cmdCompleteAt(ctx *ParseContext, args []string) error {
 	}
 
 	now := time.Now().In(time.Local)
-	marker := FormatMarker("complete", now)
+	marker := FormatMarker("complete", now, ctx.formats)
 
 	if err := AppendToLine(filePath, lineNum, marker); err != nil {
 		return err
@@ -580,7 +583,7 @@ func main() {
 	case "tags":
 		err = cmdTags(notesPaths, ctx)
 	case "defer":
-		err = cmdDefer(subArgs)
+		err = cmdDefer(ctx, subArgs)
 	case "irrelevant":
 		err = cmdIrrelevant(ctx, subArgs)
 	case "unset":

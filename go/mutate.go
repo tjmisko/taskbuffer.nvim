@@ -54,7 +54,7 @@ func ChangeCheckbox(filePath string, lineNumber int, from, to string) error {
 }
 
 // RemoveLastMarker removes the last occurrence of a ::kind marker from a line.
-func RemoveLastMarker(filePath string, lineNumber int, kind string) error {
+func RemoveLastMarker(filePath string, lineNumber int, kind string, fmts DateTimeFormats) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", filePath, err)
@@ -66,7 +66,7 @@ func RemoveLastMarker(filePath string, lineNumber int, kind string) error {
 	}
 
 	// Match ::kind [[DATE]] TIME (time is optional)
-	pattern := fmt.Sprintf(`\s*::%s\s+\[\[\d{4}-\d{2}-\d{2}\]\]\s*(\d{2}:\d{2})?`, regexp.QuoteMeta(kind))
+	pattern := fmt.Sprintf(`\s*::%s\s+\[\[%s\]\]\s*(%s)?`, regexp.QuoteMeta(kind), fmts.DateRe, fmts.TimeRe)
 	re := regexp.MustCompile(pattern)
 
 	line := lines[idx]

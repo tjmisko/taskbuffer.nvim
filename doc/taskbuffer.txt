@@ -106,7 +106,7 @@ option not specified falls back to its default value.
               done = "- [x]",
               irrelevant = "- [-]",
           },
-          date_wrapper = { "(@[[", "]])" },
+          date_wrapper = { "(@[[", "]]", ")" },
           marker_prefix = "::",
       },
 
@@ -183,6 +183,55 @@ Example: >lua
   `"narrowest"`    Task appears only in the narrowest matching horizon
 
 `week_start` sets the first day of the week (default: `"monday"`).
+
+                                                    *taskbuffer-formats*
+Date and time formats ~
+
+The `formats.date` and `formats.time` options control how dates and times
+are parsed, displayed, and written throughout the plugin. Both accept
+strftime-style format strings.
+
+Supported date directives:
+  `%Y`  Four-digit year (2026)
+  `%m`  Two-digit month (03)
+  `%d`  Two-digit day (04)
+  `%F`  Shorthand for `%Y-%m-%d`
+
+Supported time directives:
+  `%H`  24-hour hour (15)
+  `%M`  Minute (04)
+  `%I`  12-hour hour (3)
+  `%p`  AM/PM
+  `%R`  Shorthand for `%H:%M`
+
+Examples: >lua
+  -- US date format with 12-hour time
+  formats = {
+      date = "%m/%d/%Y",
+      time = "%I:%M %p",
+  }
+  -- Task: - [ ] Meeting (@[[03/04/2026]] 1:00 PM)
+
+  -- European date format
+  formats = {
+      date = "%d.%m.%Y",
+  }
+  -- Task: - [ ] Meeting (@[[04.03.2026]])
+<
+
+These formats affect:
+- Parsing task lines from markdown files
+- Displaying dates in the taskfile buffer
+- Writing `::start`, `::stop`, `::complete`, and other markers
+- Date shifting (`<M-Left>`, `<M-Right>`) and set-today (`<C-T>`)
+- The `defer`, `irrelevant`, and `complete-at` commands
+
+Known limitations:
+- Path-prefixed wikilinks with slash-separated dates (e.g.,
+  `(@[[daily/03/04/2026]])` with `%m/%d/%Y`) are ambiguous. Use a format
+  without `/` separators if you use path-prefixed wikilinks.
+- Changing the date format mid-stream means existing tasks in the old
+  format will not parse. Migrate existing tasks manually.
 
 ==============================================================================
 5. COMMANDS                                         *taskbuffer-commands*
