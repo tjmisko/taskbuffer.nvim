@@ -63,6 +63,41 @@ describe("list parity (tag filter)", function()
     end)
 end)
 
+describe("list parity (custom format ctx plumbing)", function()
+    -- Custom multi-word checkboxes + a 2-element date wrapper {date}. Exercises
+    -- the scan_pattern alternation, status_map, and the 2-elem wrapper branch.
+    local custom = {
+        formats = {
+            checkbox = { open = "TODO ", done = "DONE ", skip = "SKIP " },
+            date_wrapper = { "{", "}" },
+        },
+    }
+    it("matches Go for custom-format-vault (custom checkbox + wrapper)", function()
+        compare("custom-format-vault", custom, {}, {})
+    end)
+    it("matches Go for custom-format-vault (+ --markers)", function()
+        compare("custom-format-vault", custom, { "--markers" }, { markers = true })
+    end)
+end)
+
+describe("list parity (custom horizons ctx plumbing)", function()
+    local specs = {
+        { label = "# Overdue", after = "past" },
+        { label = "# Now", after = 0 },
+        { label = "# Next Week", after = "1w" },
+        { label = "# Backlog", undated = true },
+    }
+    it("matches Go for horizons-vault (custom specs, default overlap)", function()
+        compare("horizons-vault", { horizons = specs }, {}, {})
+    end)
+    it("matches Go for horizons-vault (overlap=first_match)", function()
+        compare("horizons-vault", { horizons = specs, horizons_overlap = "first_match" }, {}, {})
+    end)
+    it("matches Go for horizons-vault (week_start=sunday)", function()
+        compare("horizons-vault", { horizons = specs, week_start = "sunday" }, {}, {})
+    end)
+end)
+
 describe("tags parity (default config)", function()
     local vaults = { "tagged-vault", "tag-edge-vault", "fm-due-vault", "frontmatter-vault" }
     for _, v in ipairs(vaults) do
