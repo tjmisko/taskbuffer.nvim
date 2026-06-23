@@ -126,7 +126,15 @@ describe("format.format_taskfile — buckets and headers", function()
         }
         local got = format.format_taskfile(tasks, NOW, DEFAULT_OPTS)
 
-        for _, header in ipairs({ "# Overdue", "# Today", "# Tomorrow", "# This Week", "# This Month", "# This Year", "# Far Off" }) do
+        for _, header in ipairs({
+            "# Overdue",
+            "# Today",
+            "# Tomorrow",
+            "# This Week",
+            "# This Month",
+            "# This Year",
+            "# Far Off",
+        }) do
             assert.is_not_nil(at(got, header), "missing header " .. header)
         end
 

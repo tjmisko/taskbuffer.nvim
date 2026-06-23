@@ -52,10 +52,7 @@ describe("state read/write/clear", function()
             filepath = "/notes/daily/2026-02-17.md",
             linenumber = 5,
         }))
-        assert.are.equal(
-            "1739800000\tBuy groceries\t/notes/daily/2026-02-17.md\t5\n",
-            read_raw(state.state_path(dir))
-        )
+        assert.are.equal("1739800000\tBuy groceries\t/notes/daily/2026-02-17.md\t5\n", read_raw(state.state_path(dir)))
     end)
 
     it("returns nil,nil when the state file is missing", function()
@@ -67,7 +64,10 @@ describe("state read/write/clear", function()
     it("clears an existing state file", function()
         local dir = temp_dir()
         assert.is_true(state.write_current_task(dir, {
-            start_time = 1, name = "test", filepath = "/a.md", linenumber = 1,
+            start_time = 1,
+            name = "test",
+            filepath = "/a.md",
+            linenumber = 1,
         }))
         assert.is_true(state.clear_current_task(dir))
         assert.is_nil(vim.uv.fs_stat(state.state_path(dir)))

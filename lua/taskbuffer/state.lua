@@ -91,13 +91,7 @@ end
 ---@return boolean ok, string|nil err
 function M.write_current_task(state_dir, ct)
     vim.fn.mkdir(state_dir, "p")
-    local line = string.format(
-        "%d\t%s\t%s\t%d\n",
-        ct.start_time,
-        ct.name,
-        ct.filepath,
-        ct.linenumber
-    )
+    local line = string.format("%d\t%s\t%s\t%d\n", ct.start_time, ct.name, ct.filepath, ct.linenumber)
     local f = io.open(M.state_path(state_dir), "wb")
     if not f then
         return false, "writing " .. M.state_path(state_dir)

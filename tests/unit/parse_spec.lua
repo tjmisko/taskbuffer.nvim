@@ -67,20 +67,24 @@ describe("parse.parse_task — core (parse_test.go)", function()
     end)
 
     it("task with markers (original + deferral)", function()
-        local task = assert(parse.parse_task(
-            rm("- [ ] Some task (@[[2026-01-21]])::original [[2026-01-14]] ::deferral [[2026-01-21]] 12:03"),
-            default_ctx
-        ))
+        local task = assert(
+            parse.parse_task(
+                rm("- [ ] Some task (@[[2026-01-21]])::original [[2026-01-14]] ::deferral [[2026-01-21]] 12:03"),
+                default_ctx
+            )
+        )
         assert.are.equal(2, #task.markers)
         assert.are.same({ kind = "original", date = "2026-01-14", time = "" }, task.markers[1])
         assert.are.same({ kind = "deferral", date = "2026-01-21", time = "12:03" }, task.markers[2])
     end)
 
     it("start/stop markers and done status", function()
-        local task = assert(parse.parse_task(
-            rm("- [x] Write report (@[[2026-01-14]]) ::start [[2026-01-14]] 15:58 ::stop [[2026-01-14]] 16:40"),
-            default_ctx
-        ))
+        local task = assert(
+            parse.parse_task(
+                rm("- [x] Write report (@[[2026-01-14]]) ::start [[2026-01-14]] 15:58 ::stop [[2026-01-14]] 16:40"),
+                default_ctx
+            )
+        )
         assert.are.equal("done", task.status)
         assert.are.equal(2, #task.markers)
         assert.are.equal("start", task.markers[1].kind)
@@ -95,7 +99,8 @@ describe("parse.parse_task — core (parse_test.go)", function()
     end)
 
     it("wikilinks in body survive", function()
-        local task = assert(parse.parse_task(rm("- [ ] Visit [[The Commons]] for lunch (@[[2026-02-17]])"), default_ctx))
+        local task =
+            assert(parse.parse_task(rm("- [ ] Visit [[The Commons]] for lunch (@[[2026-02-17]])"), default_ctx))
         assert.are.equal("Visit [[The Commons]] for lunch", task.body)
     end)
 
@@ -117,20 +122,26 @@ describe("parse.parse_task — core (parse_test.go)", function()
     end)
 
     it("no-space markers and hyphenated tag", function()
-        local task = assert(parse.parse_task(
-            rm("- [x] Buy screws (@[[2026-01-28]]) #fish-tank::complete [[2026-01-29]] 09:16"),
-            default_ctx
-        ))
+        local task = assert(
+            parse.parse_task(
+                rm("- [x] Buy screws (@[[2026-01-28]]) #fish-tank::complete [[2026-01-29]] 09:16"),
+                default_ctx
+            )
+        )
         assert.are.same({ "fish-tank" }, task.tags)
         assert.are.equal(1, #task.markers)
         assert.are.equal("complete", task.markers[1].kind)
     end)
 
     it("full complex line", function()
-        local task = assert(parse.parse_task(
-            rm("- [x] Rewrite About Me Section <30m> (@[[2026-01-23]] 15:00) ::start [[2026-01-23]] 15:17::complete [[2026-01-23]] 17:19"),
-            default_ctx
-        ))
+        local task = assert(
+            parse.parse_task(
+                rm(
+                    "- [x] Rewrite About Me Section <30m> (@[[2026-01-23]] 15:00) ::start [[2026-01-23]] 15:17::complete [[2026-01-23]] 17:19"
+                ),
+                default_ctx
+            )
+        )
         assert.are.equal("done", task.status)
         assert.are.equal("Rewrite About Me Section", task.body)
         assert.are.equal("30m", task.duration)
@@ -149,10 +160,12 @@ describe("parse.parse_task — core (parse_test.go)", function()
     end)
 
     it("marker with path-prefix date keeps stripped raw date", function()
-        local task = assert(parse.parse_task(
-            rm("- [x] Backend docs <60m> (@[[2025-05-31]])::complete [[daily/2025-06-13]] 08:50"),
-            default_ctx
-        ))
+        local task = assert(
+            parse.parse_task(
+                rm("- [x] Backend docs <60m> (@[[2025-05-31]])::complete [[daily/2025-06-13]] 08:50"),
+                default_ctx
+            )
+        )
         assert.are.equal(1, #task.markers)
         assert.are.equal("2025-06-13", task.markers[1].date)
     end)
@@ -232,7 +245,8 @@ describe("parse — custom date/time formats (parse_test.go)", function()
     end)
 
     it("12-hour time keeps the verbatim '1:00 PM'", function()
-        local ctx = ctx_with({ formats = { date = "%Y-%m-%d", time = "%I:%M %p", date_wrapper = { "(@[[", "]]", ")" } } })
+        local ctx =
+            ctx_with({ formats = { date = "%Y-%m-%d", time = "%I:%M %p", date_wrapper = { "(@[[", "]]", ")" } } })
         local task = assert(parse.parse_task(rm("- [ ] Task (@[[2026-03-04]] 1:00 PM)"), ctx))
         assert.are.equal("1:00 PM", task.due_time)
     end)
@@ -261,11 +275,14 @@ describe("parse — custom date/time formats (parse_test.go)", function()
     end)
 
     it("markers with custom format keep raw date/time", function()
-        local ctx = ctx_with({ formats = { date = "%m/%d/%Y", time = "%I:%M %p", date_wrapper = { "(@[[", "]]", ")" } } })
-        local task = assert(parse.parse_task(
-            rm("- [x] Task (@[[03/04/2026]]) ::start [[03/04/2026]] 1:00 PM ::complete [[03/04/2026]] 2:30 PM"),
-            ctx
-        ))
+        local ctx =
+            ctx_with({ formats = { date = "%m/%d/%Y", time = "%I:%M %p", date_wrapper = { "(@[[", "]]", ")" } } })
+        local task = assert(
+            parse.parse_task(
+                rm("- [x] Task (@[[03/04/2026]]) ::start [[03/04/2026]] 1:00 PM ::complete [[03/04/2026]] 2:30 PM"),
+                ctx
+            )
+        )
         assert.are.equal(2, #task.markers)
         assert.are.same({ kind = "start", date = "03/04/2026", time = "1:00 PM" }, task.markers[1])
         assert.are.same({ kind = "complete", date = "03/04/2026", time = "2:30 PM" }, task.markers[2])
@@ -423,14 +440,29 @@ end)
 
 describe("parse — strict date validation (date_validation_test.go)", function()
     local invalid_dates = {
-        "2026-00-15", "2026-13-01", "2026-99-01",
-        "2026-01-00", "2026-01-32", "2026-01-99",
-        "2026-04-31", "2026-06-31", "2026-09-31", "2026-11-31",
-        "2026-02-30", "2026-02-31", "2025-02-29", "2100-02-29",
+        "2026-00-15",
+        "2026-13-01",
+        "2026-99-01",
+        "2026-01-00",
+        "2026-01-32",
+        "2026-01-99",
+        "2026-04-31",
+        "2026-06-31",
+        "2026-09-31",
+        "2026-11-31",
+        "2026-02-30",
+        "2026-02-31",
+        "2025-02-29",
+        "2100-02-29",
     }
     local valid_dates = {
-        "2026-01-01", "2026-12-31", "2025-02-28", "2024-02-29",
-        "2000-02-29", "2026-04-30", "2026-06-30",
+        "2026-01-01",
+        "2026-12-31",
+        "2025-02-28",
+        "2024-02-29",
+        "2000-02-29",
+        "2026-04-30",
+        "2026-06-30",
     }
 
     local function strict_ctx()
@@ -483,9 +515,8 @@ describe("parse — strict date validation (date_validation_test.go)", function(
     it("strict marker: stores raw date, collects 'marker (start)' error, inline still parsed", function()
         for _, ds in ipairs(invalid_dates) do
             local ctx = strict_ctx()
-            local task = assert(parse.parse_task(
-                rm("- [ ] Task (@[[2026-01-15]]) ::start [[" .. ds .. "]] 10:00"), ctx
-            ))
+            local task =
+                assert(parse.parse_task(rm("- [ ] Task (@[[2026-01-15]]) ::start [[" .. ds .. "]] 10:00"), ctx))
             assert.is_truthy(task.due_date)
             assert.are.equal(1, #task.markers)
             assert.are.equal(ds, task.markers[1].date)
@@ -495,9 +526,8 @@ describe("parse — strict date validation (date_validation_test.go)", function(
     end)
 
     it("non-strict marker: stores raw invalid date, no complaint", function()
-        local task = assert(parse.parse_task(
-            rm("- [ ] Task (@[[2026-01-15]]) ::start [[2026-13-45]] 10:00"), default_ctx
-        ))
+        local task =
+            assert(parse.parse_task(rm("- [ ] Task (@[[2026-01-15]]) ::start [[2026-13-45]] 10:00"), default_ctx))
         assert.are.equal(1, #task.markers)
         assert.are.equal("2026-13-45", task.markers[1].date)
     end)
@@ -512,9 +542,12 @@ describe("parse — strict date validation (date_validation_test.go)", function(
 
     it("strict: multiple invalid markers collect one error each, both stored", function()
         local ctx = strict_ctx()
-        local task = assert(parse.parse_task(
-            rm("- [ ] Task (@[[2026-01-15]]) ::start [[2026-13-01]] 10:00 ::stop [[2026-00-15]] 11:00"), ctx
-        ))
+        local task = assert(
+            parse.parse_task(
+                rm("- [ ] Task (@[[2026-01-15]]) ::start [[2026-13-01]] 10:00 ::stop [[2026-00-15]] 11:00"),
+                ctx
+            )
+        )
         assert.are.equal(2, #task.markers)
         assert.are.equal(2, #ctx.date_errors)
         assert.are.equal("marker (start)", ctx.date_errors[1].context)

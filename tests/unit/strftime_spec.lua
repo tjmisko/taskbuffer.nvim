@@ -75,14 +75,29 @@ end)
 describe("strftime.validate_date", function()
     -- invalidDateCases from date_validation_test.go
     local invalid = {
-        { 2026, 0, 15 }, { 2026, 13, 1 }, { 2026, 99, 1 },
-        { 2026, 1, 0 }, { 2026, 1, 32 }, { 2026, 1, 99 },
-        { 2026, 4, 31 }, { 2026, 6, 31 }, { 2026, 9, 31 }, { 2026, 11, 31 },
-        { 2026, 2, 30 }, { 2026, 2, 31 }, { 2025, 2, 29 }, { 2100, 2, 29 },
+        { 2026, 0, 15 },
+        { 2026, 13, 1 },
+        { 2026, 99, 1 },
+        { 2026, 1, 0 },
+        { 2026, 1, 32 },
+        { 2026, 1, 99 },
+        { 2026, 4, 31 },
+        { 2026, 6, 31 },
+        { 2026, 9, 31 },
+        { 2026, 11, 31 },
+        { 2026, 2, 30 },
+        { 2026, 2, 31 },
+        { 2025, 2, 29 },
+        { 2100, 2, 29 },
     }
     local valid = {
-        { 2026, 1, 1 }, { 2026, 12, 31 }, { 2025, 2, 28 }, { 2024, 2, 29 },
-        { 2000, 2, 29 }, { 2026, 4, 30 }, { 2026, 6, 30 },
+        { 2026, 1, 1 },
+        { 2026, 12, 31 },
+        { 2025, 2, 28 },
+        { 2024, 2, 29 },
+        { 2000, 2, 29 },
+        { 2026, 4, 30 },
+        { 2026, 6, 30 },
     }
 
     for _, c in ipairs(invalid) do
@@ -135,9 +150,18 @@ describe("strftime noon-epoch helpers", function()
 
     it("date_to_iso and date_compare operate on {y,m,d} tables", function()
         assert.are.equal("2026-02-09", strftime.date_to_iso({ year = 2026, month = 2, day = 9 }))
-        assert.are.equal(-1, strftime.date_compare({ year = 2026, month = 1, day = 1 }, { year = 2026, month = 1, day = 2 }))
-        assert.are.equal(0, strftime.date_compare({ year = 2026, month = 1, day = 1 }, { year = 2026, month = 1, day = 1 }))
-        assert.are.equal(1, strftime.date_compare({ year = 2027, month = 1, day = 1 }, { year = 2026, month = 12, day = 31 }))
+        assert.are.equal(
+            -1,
+            strftime.date_compare({ year = 2026, month = 1, day = 1 }, { year = 2026, month = 1, day = 2 })
+        )
+        assert.are.equal(
+            0,
+            strftime.date_compare({ year = 2026, month = 1, day = 1 }, { year = 2026, month = 1, day = 1 })
+        )
+        assert.are.equal(
+            1,
+            strftime.date_compare({ year = 2027, month = 1, day = 1 }, { year = 2026, month = 12, day = 31 })
+        )
     end)
 end)
 

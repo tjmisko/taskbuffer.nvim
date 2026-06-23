@@ -124,10 +124,7 @@ describe("actions.irrelevant", function()
         local path = temp_md("- [ ] Irrelevant task (@[[2026-02-17]])\n")
         local ok = actions.irrelevant(path, 1, ctx, NOW)
         assert.is_true(ok)
-        assert.are.equal(
-            "- [-] Irrelevant task (@[[2026-02-17]]) ::irrelevant [[2026-02-17]] 15:00 \n",
-            read_raw(path)
-        )
+        assert.are.equal("- [-] Irrelevant task (@[[2026-02-17]]) ::irrelevant [[2026-02-17]] 15:00 \n", read_raw(path))
     end)
 end)
 
@@ -164,7 +161,10 @@ describe("actions.stop", function()
         local ctx = make_ctx(dir)
         local path = temp_md("- [ ] Running task\n")
         assert.is_true(state.write_current_task(dir, {
-            start_time = NOW, name = "Running task", filepath = path, linenumber = 1,
+            start_time = NOW,
+            name = "Running task",
+            filepath = path,
+            linenumber = 1,
         }))
 
         local ok, status = actions.stop(ctx, NOW)
@@ -188,7 +188,10 @@ describe("actions.complete", function()
         local ctx = make_ctx(dir)
         local path = temp_md("- [ ] Finish me\n")
         assert.is_true(state.write_current_task(dir, {
-            start_time = NOW, name = "Finish me", filepath = path, linenumber = 1,
+            start_time = NOW,
+            name = "Finish me",
+            filepath = path,
+            linenumber = 1,
         }))
 
         local ok, status = actions.complete(ctx, NOW)
@@ -227,7 +230,10 @@ describe("actions.start", function()
         local path_a = temp_md("- [ ] Task A\n")
         local path_b = temp_md("- [ ] Task B\n")
         assert.is_true(state.write_current_task(dir, {
-            start_time = NOW, name = "Task A", filepath = path_a, linenumber = 1,
+            start_time = NOW,
+            name = "Task A",
+            filepath = path_a,
+            linenumber = 1,
         }))
 
         local ok = actions.start(path_b, 1, "Task B", ctx, NOW)

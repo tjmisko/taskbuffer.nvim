@@ -147,13 +147,9 @@ function M.new_parse_context(config)
     -- Go's alias/path strip `(?:[^|\]]*\|)?(?:.*/)?` (DECISION-E1).
     local wrapper = formats.date_wrapper
     local o, c2, c3, two_elem
-    if type(wrapper) == "table"
-        and #wrapper == 3
-        and wrapper[1] ~= "" and wrapper[2] ~= "" and wrapper[3] ~= "" then
+    if type(wrapper) == "table" and #wrapper == 3 and wrapper[1] ~= "" and wrapper[2] ~= "" and wrapper[3] ~= "" then
         o, c2, c3, two_elem = wrapper[1], wrapper[2], wrapper[3], false
-    elseif type(wrapper) == "table"
-        and #wrapper == 2
-        and wrapper[1] ~= "" and wrapper[2] ~= "" then
+    elseif type(wrapper) == "table" and #wrapper == 2 and wrapper[1] ~= "" and wrapper[2] ~= "" then
         o, c2, two_elem = wrapper[1], wrapper[2], true
     else
         o, c2, c3, two_elem = DEFAULT_WRAPPER[1], DEFAULT_WRAPPER[2], DEFAULT_WRAPPER[3], false
@@ -281,7 +277,11 @@ function M.parse_task(match, ctx)
                         strftime.collect_date_error(
                             ctx.date_errors,
                             strftime.new_date_error(
-                                match.path, match.line_number, mdate, "marker (" .. kind .. ")", reason
+                                match.path,
+                                match.line_number,
+                                mdate,
+                                "marker (" .. kind .. ")",
+                                reason
                             )
                         )
                     end

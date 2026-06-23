@@ -192,14 +192,6 @@ function M.shift_date_in_string(line, days)
 
     local prefix = captures[1]
     local suffix = captures[#captures]
-    -- Extract date components from the middle captures
-    local date_captures = {}
-    for i = 2, #captures - 1 do
-        date_captures[#date_captures + 1] = captures[i]
-    end
-
-    -- Parse the date string that was matched
-    local matched_date = table.concat(date_captures)
     -- Re-extract from the full match to get the actual date substring
     local date_start = #prefix + 1
     local date_end = #line - #suffix

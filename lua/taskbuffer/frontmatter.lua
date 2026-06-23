@@ -283,8 +283,7 @@ function M.resolve_cfg(c)
     return {
         due_key = nonempty_str(c.due_key, "due"),
         status_key = nonempty_str(status_key, "status"),
-        done_values = (type(done_values) == "table" and #done_values > 0) and done_values
-            or { "done", "complete" },
+        done_values = (type(done_values) == "table" and #done_values > 0) and done_values or { "done", "complete" },
         inherit_due = (c.inherit_due ~= false), -- *bool semantics: default true
         require_tags = c.require_tags or {},
     }
@@ -322,10 +321,7 @@ local function parse_due_date(date_str, spec, path, context, date_errors)
     end
     local ok, reason = strftime.validate_date(y, mo, d)
     if not ok then
-        strftime.collect_date_error(
-            date_errors,
-            strftime.new_date_error(path, 0, date_str, context, reason)
-        )
+        strftime.collect_date_error(date_errors, strftime.new_date_error(path, 0, date_str, context, reason))
         return nil
     end
     return strftime.date_to_epoch(y, mo, d)
@@ -437,9 +433,7 @@ function M.merge_due(tasks, fm_cfg, date_fmt, date_errors)
                     end
                     if allowed then
                         local date_part, time_part = split_first_space(due)
-                        local epoch = parse_due_date(
-                            date_part, spec, task.file_path, "frontmatter due", date_errors
-                        )
+                        local epoch = parse_due_date(date_part, spec, task.file_path, "frontmatter due", date_errors)
                         if epoch ~= nil then
                             task.due_date = epoch
                             if time_part ~= nil and time_part ~= "" then
@@ -513,9 +507,7 @@ function M.project_task(path, fm_cfg, date_fmt, date_errors)
 
     local spec = strftime.compile(date_fmt)
     local date_part, time_part = split_first_space(due)
-    local epoch = parse_due_date(
-        date_part, spec, path, "frontmatter project due", date_errors
-    )
+    local epoch = parse_due_date(date_part, spec, path, "frontmatter project due", date_errors)
     if epoch == nil then
         return nil
     end

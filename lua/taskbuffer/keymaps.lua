@@ -82,8 +82,12 @@ local function shift_task_dates_bulk(lines, days)
                         util.shift_frontmatter_due(filepath, days, due_key)
                     if fm_new_date then
                         fm_shifted_files[filepath] = true
-                        all_edits[#all_edits + 1] =
-                            { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line }
+                        all_edits[#all_edits + 1] = {
+                            filepath = filepath,
+                            linenumber = fm_line,
+                            old_line = old_fm_line,
+                            new_line = new_fm_line,
+                        }
                         shifted = shifted + 1
                     end
                 end
@@ -164,7 +168,9 @@ local function shift_task_date_in_taskfile(days)
             local op = "shift FM " .. direction .. " " .. math.abs(days) .. " day(s)"
             require("taskbuffer.undo").push({
                 op = op,
-                edits = { { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line } },
+                edits = {
+                    { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line },
+                },
                 timestamp = os.time(),
             })
             buffer.refresh_and_restore_cursor()
@@ -207,8 +213,12 @@ local function set_task_dates_today_bulk(lines)
                         util.set_frontmatter_due_today(filepath, due_key)
                     if fm_new_date then
                         fm_set_files[filepath] = true
-                        all_edits[#all_edits + 1] =
-                            { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line }
+                        all_edits[#all_edits + 1] = {
+                            filepath = filepath,
+                            linenumber = fm_line,
+                            old_line = old_fm_line,
+                            new_line = new_fm_line,
+                        }
                         updated = updated + 1
                     end
                 end
@@ -267,7 +277,9 @@ local function set_date_today_in_taskfile()
         if fm_new_date then
             require("taskbuffer.undo").push({
                 op = "set FM today",
-                edits = { { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line } },
+                edits = {
+                    { filepath = filepath, linenumber = fm_line, old_line = old_fm_line, new_line = new_fm_line },
+                },
                 timestamp = os.time(),
             })
             buffer.refresh_and_restore_cursor()
@@ -295,7 +307,7 @@ local function set_date_today_in_markdown()
         local due_key = cfg.frontmatter.due_key or "due"
         local fm_line_num, _, _ = util.find_frontmatter_due_line(filepath, due_key)
         if fm_line_num then
-            local fm_new_date, _, _, new_fm_line = util.set_frontmatter_due_today(filepath, due_key)
+            local fm_new_date = util.set_frontmatter_due_today(filepath, due_key)
             if fm_new_date then
                 vim.cmd("edit!")
                 vim.api.nvim_win_set_cursor(0, { fm_line_num, 0 })
@@ -411,8 +423,12 @@ function M.setup_keymaps()
                 g:write(datetime .. "\t" .. task_content .. "\t" .. filepath .. "\t" .. linenumber)
                 g:close()
                 local fmts = config.formats
-                local start_suffix = " " .. fmts.marker_prefix .. "start [["
-                    .. os.date(fmts.date) .. "]] " .. os.date(fmts.time)
+                local start_suffix = " "
+                    .. fmts.marker_prefix
+                    .. "start [["
+                    .. os.date(fmts.date)
+                    .. "]] "
+                    .. os.date(fmts.time)
                 util.append_to_line(filepath, tonumber(linenumber), start_suffix)
             end, { buffer = true, desc = "Start task" })
 

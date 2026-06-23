@@ -66,14 +66,17 @@ describe("scan.scan — basic temp dir", function()
     -- TestScan_FindsTasksInTempDir
     it("finds all task lines across files, absolute paths, line>=1, nonempty text", function()
         local dir = make_vault()
-        write_file(dir, "project.md", "# Project\n"
-            .. "- [ ] First task (@[[2026-02-17]])\n"
-            .. "- [x] Done task (@[[2026-02-16]] 10:00)::complete [[2026-02-16]] 11:00\n"
-            .. "Some other content\n")
+        write_file(
+            dir,
+            "project.md",
+            "# Project\n"
+                .. "- [ ] First task (@[[2026-02-17]])\n"
+                .. "- [x] Done task (@[[2026-02-16]] 10:00)::complete [[2026-02-16]] 11:00\n"
+                .. "Some other content\n"
+        )
         write_file(dir, "empty.md", "# Nothing here\n")
         write_file(dir, "daily.md", "\t- [ ] Indented task <30m> (@[[2026-02-18]])\n")
-        write_file(dir, "someday.md", "- [ ] Investigate OOM Kill Root Cause\n"
-            .. "- [x] Already done undated task\n")
+        write_file(dir, "someday.md", "- [ ] Investigate OOM Kill Root Cause\n" .. "- [x] Already done undated task\n")
 
         local matches, err = scan.scan(ctx(dir))
         assert.is_nil(err)

@@ -301,12 +301,19 @@ function M.format_date_error(e)
     if e.line_number and e.line_number > 0 then
         return string.format(
             'date error: %s:%d: invalid %s "%s": %s',
-            e.file_path, e.line_number, e.context, e.date_str, e.err or "invalid date"
+            e.file_path,
+            e.line_number,
+            e.context,
+            e.date_str,
+            e.err or "invalid date"
         )
     end
     return string.format(
         'date error: %s: invalid %s "%s": %s',
-        e.file_path, e.context, e.date_str, e.err or "invalid date"
+        e.file_path,
+        e.context,
+        e.date_str,
+        e.err or "invalid date"
     )
 end
 

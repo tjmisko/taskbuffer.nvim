@@ -124,9 +124,7 @@ describe("mutate.remove_last_marker", function()
     end)
 
     it("removes only the LAST of multiple markers", function()
-        local path = temp_md(
-            "- [-] Task ::irrelevant [[2026-02-17]] 09:00 ::irrelevant [[2026-02-18]] 10:00\n"
-        )
+        local path = temp_md("- [-] Task ::irrelevant [[2026-02-17]] 09:00 ::irrelevant [[2026-02-18]] 10:00\n")
         local ok = mutate.remove_last_marker(path, 1, "irrelevant")
         assert.is_true(ok)
         local line = read_lines(path)[1]

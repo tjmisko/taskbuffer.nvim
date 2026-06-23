@@ -283,12 +283,14 @@ end
 local QUOTE_META = "\\.+*?()|[]{}^$"
 
 local function rg_quote_meta(s)
-    return (s:gsub(".", function(c)
-        if QUOTE_META:find(c, 1, true) then
-            return "\\" .. c
-        end
-        return c
-    end))
+    return (
+        s:gsub(".", function(c)
+            if QUOTE_META:find(c, 1, true) then
+                return "\\" .. c
+            end
+            return c
+        end)
+    )
 end
 
 --- Build an rg alternation pattern from configured checkbox literals.

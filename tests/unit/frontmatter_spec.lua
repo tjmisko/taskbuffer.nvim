@@ -147,7 +147,7 @@ describe("get_string", function()
     end)
 
     it("returns the verbatim quoted date+time string", function()
-        local p = write_file("---\ndue: \"2026-05-10 14:30\"\n---\n")
+        local p = write_file('---\ndue: "2026-05-10 14:30"\n---\n')
         local f = fm.parse_frontmatter(p)
         assert.are.equal("2026-05-10 14:30", fm.get_string(f, "due"))
     end)
@@ -211,7 +211,7 @@ describe("merge_due", function()
     end)
 
     it("inherits the time portion of a quoted date+time", function()
-        local p = write_file("---\ndue: \"2026-05-10 14:30\"\n---\n")
+        local p = write_file('---\ndue: "2026-05-10 14:30"\n---\n')
         local tasks = { task(p, "timed") }
         fm.merge_due(tasks, {}, "%Y-%m-%d", nil)
         assert.is_not_nil(tasks[1].due_date)
@@ -279,7 +279,7 @@ end)
 
 describe("full pipeline", function()
     it("basic inheritance: undated inherit, inline wins", function()
-        local p = write_file("---\ndue: \"2026-04-15\"\ntags:\n  - work\n---\n")
+        local p = write_file('---\ndue: "2026-04-15"\ntags:\n  - work\n---\n')
         local tasks = full_pipeline({
             task(p, "Undated task one"),
             task(p, "Undated task two"),
@@ -308,7 +308,7 @@ describe("full pipeline", function()
     end)
 
     it("an active file is not filtered and still inherits", function()
-        local p = write_file("---\ndue: \"2026-04-10\"\nstatus: active\n---\n")
+        local p = write_file('---\ndue: "2026-04-10"\nstatus: active\n---\n')
         local tasks = full_pipeline({
             task(p, "Undated one"),
             task(p, "Undated two"),
@@ -344,7 +344,7 @@ describe("full pipeline", function()
     end)
 
     it("custom due key: inherits from 'deadline', default ignores it", function()
-        local p = write_file("---\ndeadline: \"2026-06-01\"\ntags:\n  - project\n---\n")
+        local p = write_file('---\ndeadline: "2026-06-01"\ntags:\n  - project\n---\n')
 
         local custom = full_pipeline({ task(p, "deadline task") }, { due_key = "deadline" })
         assert.are.equal("2026-06-01", iso(custom[1].due_date))
@@ -364,7 +364,7 @@ describe("full pipeline", function()
     end)
 
     it("require_tags: multiple must all match", function()
-        local p = write_file("---\ndue: \"2026-05-20\"\ntags:\n  - project\n  - important\n---\n")
+        local p = write_file('---\ndue: "2026-05-20"\ntags:\n  - project\n  - important\n---\n')
         local both = full_pipeline({ task(p, "t") }, { require_tags = { "project", "important" } })
         assert.is_not_nil(both[1].due_date)
 
@@ -373,13 +373,13 @@ describe("full pipeline", function()
     end)
 
     it("empty require_tags allows all files to inherit", function()
-        local p = write_file("---\ndue: \"2026-04-15\"\ntags:\n  - work\n---\n")
+        local p = write_file('---\ndue: "2026-04-15"\ntags:\n  - work\n---\n')
         local tasks = full_pipeline({ task(p, "undated") }, { require_tags = {} })
         assert.is_not_nil(tasks[1].due_date)
     end)
 
     it("inherits both date and time from the FM", function()
-        local p = write_file("---\ndue: \"2026-04-15 14:30\"\ntags:\n  - meeting\n---\n")
+        local p = write_file('---\ndue: "2026-04-15 14:30"\ntags:\n  - meeting\n---\n')
         local tasks = full_pipeline({ task(p, "Undated inheriting time") }, {})
         assert.are.equal("2026-04-15", iso(tasks[1].due_date))
         assert.are.equal("14:30", tasks[1].due_time)
@@ -512,14 +512,29 @@ end)
 
 describe("date validation", function()
     local invalid = {
-        "2026-00-15", "2026-13-01", "2026-99-01",
-        "2026-01-00", "2026-01-32", "2026-01-99",
-        "2026-04-31", "2026-06-31", "2026-09-31", "2026-11-31",
-        "2026-02-30", "2026-02-31", "2025-02-29", "2100-02-29",
+        "2026-00-15",
+        "2026-13-01",
+        "2026-99-01",
+        "2026-01-00",
+        "2026-01-32",
+        "2026-01-99",
+        "2026-04-31",
+        "2026-06-31",
+        "2026-09-31",
+        "2026-11-31",
+        "2026-02-30",
+        "2026-02-31",
+        "2025-02-29",
+        "2100-02-29",
     }
     local valid = {
-        "2026-01-01", "2026-12-31", "2025-02-28",
-        "2024-02-29", "2000-02-29", "2026-04-30", "2026-06-30",
+        "2026-01-01",
+        "2026-12-31",
+        "2025-02-28",
+        "2024-02-29",
+        "2000-02-29",
+        "2026-04-30",
+        "2026-06-30",
     }
 
     before_each(function()
@@ -529,7 +544,7 @@ describe("date validation", function()
     it("merge_due: invalid FM dates emit a DateError and stay undated (strict)", function()
         for _, ds in ipairs(invalid) do
             fm.reset()
-            local p = write_file("---\ndue: \"" .. ds .. "\"\ntags:\n  - work\n---\n")
+            local p = write_file('---\ndue: "' .. ds .. '"\ntags:\n  - work\n---\n')
             local tasks = { task(p, "undated", { line = 5 }) }
             local errs = {}
             fm.merge_due(tasks, {}, "%Y-%m-%d", errs)
@@ -543,7 +558,7 @@ describe("date validation", function()
     it("merge_due: invalid FM dates are silently skipped (non-strict)", function()
         for _, ds in ipairs(invalid) do
             fm.reset()
-            local p = write_file("---\ndue: \"" .. ds .. "\"\ntags:\n  - work\n---\n")
+            local p = write_file('---\ndue: "' .. ds .. '"\ntags:\n  - work\n---\n')
             local tasks = { task(p, "undated", { line = 5 }) }
             fm.merge_due(tasks, {}, "%Y-%m-%d", nil) -- nil collector
             assert.is_nil(tasks[1].due_date, "date should stay nil: " .. ds)
@@ -553,7 +568,7 @@ describe("date validation", function()
     it("merge_due: valid FM dates set due_date with no errors", function()
         for _, ds in ipairs(valid) do
             fm.reset()
-            local p = write_file("---\ndue: \"" .. ds .. "\"\n---\n")
+            local p = write_file('---\ndue: "' .. ds .. '"\n---\n')
             local tasks = { task(p, "t", { line = 5 }) }
             local errs = {}
             fm.merge_due(tasks, {}, "%Y-%m-%d", errs)
@@ -565,7 +580,7 @@ describe("date validation", function()
     it("project_task: invalid project due emits a DateError and yields nil (strict)", function()
         for _, ds in ipairs(invalid) do
             fm.reset()
-            local p = write_file("---\ndue: \"" .. ds .. "\"\ntags:\n  - project\n---\n- project\n")
+            local p = write_file('---\ndue: "' .. ds .. '"\ntags:\n  - project\n---\n- project\n')
             local errs = {}
             local t = fm.project_task(p, {}, "%Y-%m-%d", errs)
             assert.is_nil(t, "no project for invalid date: " .. ds)
@@ -577,7 +592,7 @@ describe("date validation", function()
     it("project_task: invalid project due is silently skipped (non-strict)", function()
         for _, ds in ipairs(invalid) do
             fm.reset()
-            local p = write_file("---\ndue: \"" .. ds .. "\"\ntags:\n  - project\n---\n- project\n")
+            local p = write_file('---\ndue: "' .. ds .. '"\ntags:\n  - project\n---\n- project\n')
             assert.is_nil(fm.project_task(p, {}, "%Y-%m-%d", nil))
         end
     end)
