@@ -422,8 +422,37 @@ end
 ---@param args string[]
 ---@param refresh boolean
 ---@return boolean success
+-- Maps the binary subcommand (args[1]) to the actions.lua method. All five
+-- verbs share the (path, lnum, ctx) signature; now defaults inside actions.
+local VERB_TO_ACTION = {
+    ["complete-at"] = "complete_at",
+    ["defer"] = "defer",
+    ["check"] = "check",
+    ["irrelevant"] = "irrelevant",
+    ["unset"] = "unset",
+}
+
 function M.run_task_cmd(args, refresh)
     local config = require("taskbuffer.config").values
+
+    if config.use_lua_pipeline then
+        local method = VERB_TO_ACTION[args[1]]
+        if not method then
+            vim.notify("[taskbuffer] unknown action: " .. tostring(args[1]), vim.log.levels.ERROR)
+            return false
+        end
+        local ctx = require("taskbuffer.context").build_context(config, {})
+        local ok, err = require("taskbuffer.actions")[method](args[2], tonumber(args[3]), ctx)
+        if not ok then
+            vim.notify("[taskbuffer] task command failed: " .. tostring(err), vim.log.levels.ERROR)
+            return false
+        end
+        if refresh then
+            require("taskbuffer.buffer").refresh_and_restore_cursor()
+        end
+        return true
+    end
+
     local cmd = { config.task_bin }
     for _, a in ipairs(args) do
         table.insert(cmd, a)

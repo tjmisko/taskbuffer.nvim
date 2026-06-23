@@ -387,7 +387,12 @@ function M.setup_keymaps()
                 local f = io.open(state_path, "r")
                 if f then
                     f:close()
-                    os.execute(config.task_bin .. " stop")
+                    if config.use_lua_pipeline then
+                        local ctx = require("taskbuffer.context").build_context(config, {})
+                        require("taskbuffer.actions").stop(ctx)
+                    else
+                        os.execute(config.task_bin .. " stop")
+                    end
                 end
                 local line = vim.fn.getline(".")
                 local filepath = string.sub(line, 1, string.find(line, ":") - 1)

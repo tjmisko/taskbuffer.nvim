@@ -70,6 +70,68 @@ function M.lua_list(vault, runtime)
     return text or ""
 end
 
+--- Run a Go binary action verb (defer/irrelevant/unset/check/complete-at) on a
+--- single file:line. Uses the current global config for marker formatting.
+--- Returns the resulting file bytes.
+---@param file string
+---@param line integer
+---@param verb string  -- the Go subcommand, e.g. "complete-at"
+---@return string bytes
+function M.go_verb(file, line, verb)
+    local config = require("taskbuffer.config")
+    local argv = { M.task_bin, "--config", config.config_json_arg(), verb, file, tostring(line) }
+    local res = vim.system(argv, { text = true }):wait()
+    assert(res.code == 0, "go " .. verb .. " failed: " .. (res.stderr or ""))
+    local fh = assert(io.open(file, "r"))
+    local data = fh:read("*a")
+    fh:close()
+    return data
+end
+
+--- Copy a single fixture file into a fresh tempdir and return its new path.
+---@param vault_name string
+---@param rel string  -- path within the vault, e.g. "daily.md"
+---@return string path
+function M.copy_file(vault_name, rel)
+    local tmp = vim.fn.tempname()
+    vim.fn.mkdir(tmp, "p")
+    local src = M.fixtures .. "/" .. vault_name .. "/" .. rel
+    local dst = tmp .. "/" .. vim.fn.fnamemodify(rel, ":t")
+    local res = vim.system({ "cp", src, dst }, { text = true }):wait()
+    assert(res.code == 0, "cp file failed: " .. (res.stderr or ""))
+    return dst
+end
+
+--- Extract the date+time a marker carries from a mutated line, as a noon-free
+--- epoch, so the Lua verb can be re-run with the EXACT clock the Go binary used
+--- (the only volatile part of a mutation is the marker's [[DATE]] HH:MM). Looks
+--- for the LAST ` [[YYYY-MM-DD]] HH:MM` on the given line. Returns nil if none.
+---@param file string
+---@param line integer
+---@return integer|nil epoch
+function M.marker_epoch_from_file(file, line)
+    local fh = assert(io.open(file, "r"))
+    local data = fh:read("*a")
+    fh:close()
+    local lines = vim.split(data, "\n", { plain = true })
+    local l = lines[line] or ""
+    local y, mo, d, h, mi
+    for cy, cm, cd, ch, cmin in l:gmatch("%[%[(%d%d%d%d)%-(%d%d)%-(%d%d)%]%]%s+(%d%d):(%d%d)") do
+        y, mo, d, h, mi = cy, cm, cd, ch, cmin
+    end
+    if not y then
+        return nil
+    end
+    return os.time({
+        year = tonumber(y),
+        month = tonumber(mo),
+        day = tonumber(d),
+        hour = tonumber(h),
+        min = tonumber(mi),
+        sec = 0,
+    })
+end
+
 --- Run the Go binary `tags` over `vault`.
 ---@return string[] tags
 function M.go_tags(vault)
