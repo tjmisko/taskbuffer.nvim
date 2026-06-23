@@ -1,5 +1,15 @@
 local M = {}
 
+--- True when `path` exists on disk. Guards the io.lines() callers below:
+--- io.lines() raises (rather than returning nil) when the path is missing,
+--- which crashes callers when a source note has been deleted or renamed since
+--- the taskfile was generated.
+---@param path string
+---@return boolean
+local function file_exists(path)
+    return (vim.uv or vim.loop).fs_stat(path) ~= nil
+end
+
 --- Parse a taskfile line into filepath and line number.
 ---@param line string
 ---@return string filepath
@@ -16,6 +26,9 @@ end
 ---@param target integer
 ---@return string|nil
 function M.read_line_from_file(path, target)
+    if not file_exists(path) then
+        return nil
+    end
     local i = 0
     for l in io.lines(path) do
         i = i + 1
@@ -31,6 +44,10 @@ end
 ---@param target_line integer
 ---@param new_content string
 function M.replace_line_in_file(path, target_line, new_content)
+    if not file_exists(path) then
+        vim.notify("[taskbuffer] source file not found: " .. path, vim.log.levels.WARN)
+        return
+    end
     local lines = {}
     local i = 0
     for line in io.lines(path) do
@@ -56,6 +73,10 @@ end
 ---@param target_line integer
 ---@param suffix string
 function M.append_to_line(path, target_line, suffix)
+    if not file_exists(path) then
+        vim.notify("[taskbuffer] source file not found: " .. path, vim.log.levels.WARN)
+        return
+    end
     local lines = {}
     local i = 0
     for line in io.lines(path) do
@@ -279,6 +300,9 @@ end
 ---@return string|nil current_value (the date portion)
 ---@return boolean is_quoted
 function M.find_frontmatter_due_line(path, due_key)
+    if not file_exists(path) then
+        return nil, nil, false
+    end
     local in_fm = false
     local i = 0
     for line in io.lines(path) do
