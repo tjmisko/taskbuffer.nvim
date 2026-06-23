@@ -90,6 +90,16 @@ local function build_cmd()
     return cmd
 end
 
+--- Runtime options for the in-process Lua pipeline (mirror build_cmd flags).
+---@return table
+local function list_opts()
+    return {
+        markers = show_markers,
+        ignore_undated = not M.get_show_undated(),
+        tags = active_tag_filter,
+    }
+end
+
 --- Write stdout content to the taskfile on disk.
 ---@param stdout string
 ---@return boolean
@@ -106,8 +116,18 @@ local function write_taskfile(stdout)
     return true
 end
 
---- Run the Go binary synchronously to regenerate the taskfile on disk.
+--- Regenerate the taskfile on disk synchronously. Uses the in-process Lua
+--- pipeline when use_lua_pipeline is set, else the Go binary.
 function M.refresh_taskfile()
+    if require("taskbuffer.config").values.use_lua_pipeline then
+        local text, err = require("taskbuffer.list").list(list_opts())
+        if err then
+            vim.notify("[taskbuffer] task list failed: " .. err, vim.log.levels.ERROR)
+            return
+        end
+        write_taskfile(text or "")
+        return
+    end
     local cmd = build_cmd()
     local result = vim.system(cmd, { text = true }):wait()
     if result.code ~= 0 then
@@ -117,9 +137,23 @@ function M.refresh_taskfile()
     write_taskfile(result.stdout)
 end
 
---- Run the Go binary asynchronously and invoke callback on completion.
+--- Regenerate the taskfile asynchronously and invoke callback on completion.
 ---@param callback fun()
 function M.refresh_taskfile_async(callback)
+    if require("taskbuffer.config").values.use_lua_pipeline then
+        -- list_async invokes its callback on the main thread (scan runs rg off
+        -- the UI loop, then parse/format run in a vim.schedule tick).
+        require("taskbuffer.list").list_async(list_opts(), function(text, err)
+            if err then
+                vim.notify("[taskbuffer] task list failed: " .. err, vim.log.levels.ERROR)
+                refreshing = false
+                return
+            end
+            write_taskfile(text or "")
+            callback()
+        end)
+        return
+    end
     local cmd = build_cmd()
     vim.system(cmd, { text = true }, function(result)
         if result.code ~= 0 then
