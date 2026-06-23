@@ -98,9 +98,10 @@ M.defaults = {
     strict = false,
 
     -- Migration flag (strangler): when true, :Tasks and the action verbs run the
-    -- in-process Lua pipeline; when false they shell out to the Go binary. Flips
-    -- to true in Phase 4 and is removed with go/ in Phase 6.
-    use_lua_pipeline = false,
+    -- in-process Lua pipeline; when false they shell out to the Go binary. Now
+    -- defaults true (the Lua pipeline is byte-parity-verified vs the binary and
+    -- as fast/faster); set false to fall back to the binary until go/ is removed.
+    use_lua_pipeline = true,
 
     -- Horizon configuration (nil = use built-in defaults)
     horizons = nil,

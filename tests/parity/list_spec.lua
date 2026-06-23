@@ -53,6 +53,25 @@ describe("list parity (default config)", function()
     end
 end)
 
+describe("list parity (async path)", function()
+    it("list_async matches Go (and the sync path) for basic-vault", function()
+        local tmp = parity.copy_vault("basic-vault")
+        parity.apply_config(tmp, {})
+        local golden = parity.go_list(tmp, {})
+
+        local done, got_text, got_err = false, nil, nil
+        require("taskbuffer.list").list_async({}, function(text, err)
+            got_text, got_err, done = text, err, true
+        end)
+        vim.wait(5000, function()
+            return done
+        end, 10)
+        assert.is_true(done, "list_async did not call back")
+        assert.is_nil(got_err)
+        assert.are.equal(golden, got_text)
+    end)
+end)
+
 describe("list parity (tag filter)", function()
     it("matches Go for tagged-vault --tag work", function()
         compare("tagged-vault", {}, { "--tag", "work" }, { tags = { "work" } })
