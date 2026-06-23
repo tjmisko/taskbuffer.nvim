@@ -73,11 +73,11 @@ require("taskbuffer").setup({
     show_undated = true,
 
     -- Task sources: directories (recursive) or glob patterns
-    sources = { "~/Documents/Notes" },
+    sources = { "~/Notes" },
 
     -- Default location for new tasks via `task create`
     inbox = {
-        file = "~/Documents/Notes/inbox.md",
+        file = "~/Notes/inbox.md",
         header = nil,  -- e.g. "## Tasks" to insert below a heading
     },
 

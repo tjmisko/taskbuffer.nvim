@@ -62,5 +62,5 @@ Requires `rg` (ripgrep) on PATH.
 
 ## Key Paths
 
-- Notes: `~/Documents/Notes`
+- Notes: `~/Notes`
 - Task state: `~/.local/state/task/current_task`

@@ -11,7 +11,7 @@ require("lazy.minit").repro({
             build = "cd go && go build -o task_bin .",
             config = function()
                 require("taskbuffer").setup({
-                    sources = { "~/Documents/Notes" },
+                    sources = { "~/Notes" },
                 })
             end,
         },

@@ -118,7 +118,7 @@ type Config struct {
 // Verbose controls whether parse warnings are printed to stderr.
 var Verbose bool
 
-const defaultNotesPath = "~/Documents/Notes"
+const defaultNotesPath = "~/Notes"
 
 func extractDate(timeIn time.Time) time.Time {
 	year, month, day := timeIn.Date()
