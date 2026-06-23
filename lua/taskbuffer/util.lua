@@ -192,14 +192,6 @@ function M.shift_date_in_string(line, days)
 
     local prefix = captures[1]
     local suffix = captures[#captures]
-    -- Extract date components from the middle captures
-    local date_captures = {}
-    for i = 2, #captures - 1 do
-        date_captures[#date_captures + 1] = captures[i]
-    end
-
-    -- Parse the date string that was matched
-    local matched_date = table.concat(date_captures)
     -- Re-extract from the full match to get the actual date substring
     local date_start = #prefix + 1
     local date_end = #line - #suffix
@@ -418,19 +410,32 @@ function M.taskfile_lines_to_qf(lines)
     return qf_list
 end
 
---- Run a Go binary command and optionally refresh the taskfile buffer.
+--- Run a task action and optionally refresh the taskfile buffer.
 ---@param args string[]
 ---@param refresh boolean
 ---@return boolean success
+-- Maps the verb (args[1]) to the actions.lua method. All five verbs share the
+-- (path, lnum, ctx) signature; defaults are applied inside actions.
+local VERB_TO_ACTION = {
+    ["complete-at"] = "complete_at",
+    ["defer"] = "defer",
+    ["check"] = "check",
+    ["irrelevant"] = "irrelevant",
+    ["unset"] = "unset",
+}
+
 function M.run_task_cmd(args, refresh)
     local config = require("taskbuffer.config").values
-    local cmd = { config.task_bin }
-    for _, a in ipairs(args) do
-        table.insert(cmd, a)
+
+    local method = VERB_TO_ACTION[args[1]]
+    if not method then
+        vim.notify("[taskbuffer] unknown action: " .. tostring(args[1]), vim.log.levels.ERROR)
+        return false
     end
-    local result = vim.system(cmd, { text = true }):wait()
-    if result.code ~= 0 then
-        vim.notify("[taskbuffer] task command failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
+    local ctx = require("taskbuffer.context").build_context(config, {})
+    local ok, err = require("taskbuffer.actions")[method](args[2], tonumber(args[3]), ctx)
+    if not ok then
+        vim.notify("[taskbuffer] task command failed: " .. tostring(err), vim.log.levels.ERROR)
         return false
     end
     if refresh then

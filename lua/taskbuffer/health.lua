@@ -12,20 +12,17 @@ function M.check()
 
     local config = require("taskbuffer.config").values
 
-    -- 2. Go binary
-    if vim.fn.executable(config.task_bin) == 1 then
-        vim.health.ok("Go binary found: " .. config.task_bin)
-    else
-        vim.health.error("Go binary not found: " .. config.task_bin, {
-            "Run: cd " .. vim.fn.fnamemodify(config.task_bin, ":h") .. " && go build -o task_bin .",
-        })
-    end
-
-    -- 3. ripgrep
+    -- 2. Search backend
     if vim.fn.executable("rg") == 1 then
         vim.health.ok("ripgrep (rg) found")
+    elseif vim.fn.executable("grep") == 1 then
+        vim.health.warn("ripgrep (rg) not found — using slower grep fallback", {
+            "Install ripgrep for best performance: https://github.com/BurntSushi/ripgrep",
+        })
     else
-        vim.health.error("ripgrep (rg) not found", { "Install ripgrep: https://github.com/BurntSushi/ripgrep" })
+        vim.health.error("neither rg nor grep found", {
+            "Install ripgrep: https://github.com/BurntSushi/ripgrep",
+        })
     end
 
     -- 4. Source directories

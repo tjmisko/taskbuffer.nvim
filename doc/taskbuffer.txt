@@ -22,16 +22,17 @@ CONTENTS                                              *taskbuffer-contents*
 taskbuffer.nvim is a Neovim plugin for managing a personal task and
 time-tracking system built on Obsidian-style markdown notes. Tasks are
 defined inline in `.md` files using a specific syntax, scanned with
-ripgrep, parsed in Go, and displayed in a custom read-only taskfile buffer
+ripgrep, parsed in Lua, and displayed in a custom read-only taskfile buffer
 bucketed by date interval (Overdue, Today, Tomorrow, This Week, etc.).
 
 ==============================================================================
 2. REQUIREMENTS                                   *taskbuffer-requirements*
 
 - Neovim >= 0.10
-- Go >= 1.21 (for building the binary)
 - ripgrep (`rg`) on PATH
 - Optional: telescope.nvim (for tag filtering)
+
+The plugin is pure Lua; there is no build step or external binary.
 
 ==============================================================================
 3. INSTALLATION                                   *taskbuffer-installation*
@@ -40,7 +41,6 @@ lazy.nvim ~
 >lua
   {
       "tjmisko/taskbuffer.nvim",
-      build = "cd go && go build -o task_bin .",
       config = function()
           require("taskbuffer").setup({
               -- your overrides here
@@ -53,7 +53,6 @@ packer.nvim ~
 >lua
   use {
       "tjmisko/taskbuffer.nvim",
-      run = "cd go && go build -o task_bin .",
       config = function()
           require("taskbuffer").setup()
       end,
@@ -69,9 +68,6 @@ option not specified falls back to its default value.
                                                    *taskbuffer-config-opts*
 >lua
   require("taskbuffer").setup({
-      -- Path to the compiled Go binary (auto-detected)
-      task_bin = "<plugin_root>/go/task_bin",
-
       -- State directory for current task tracking
       state_dir = "~/.local/state/task",
 
@@ -84,7 +80,7 @@ option not specified falls back to its default value.
       -- Task sources: directories (recursive) or glob patterns
       sources = { "~/Notes" },
 
-      -- Default location for new tasks via `task create`
+      -- Default location for new tasks
       inbox = {
           file = "~/Notes/inbox.md",
           header = nil,  -- e.g. "## Tasks"
@@ -106,7 +102,7 @@ option not specified falls back to its default value.
           },
       },
 
-      -- Task syntax formats (passed to Go binary)
+      -- Task syntax formats
       formats = {
           date = "%Y-%m-%d",
           time = "%H:%M",
@@ -273,7 +269,6 @@ Health check ~
 
 Run `:checkhealth taskbuffer` to verify your setup. Checks:
 - Neovim version (>= 0.10)
-- Go binary is built and executable
 - ripgrep is available
 - Source directories exist
 - telescope.nvim availability (optional)
@@ -389,7 +384,7 @@ taskbuffer.source_args()
 
                                             *taskbuffer.config_json_arg()*
 taskbuffer.config_json_arg()
-    Returns the JSON-encoded config string for the Go binary.
+    Returns the JSON-encoded config string.
 
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:

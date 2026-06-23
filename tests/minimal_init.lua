@@ -14,6 +14,10 @@ local project_root = vim.fn.fnamemodify(script_dir, ":h")
 -- Add project and plenary to rtp
 vim.opt.rtp:prepend(project_root)
 
+-- Allow `require("tests.helpers.foo")` to resolve to <root>/tests/helpers/foo.lua
+-- (rtp only exposes <root>/lua/?.lua; test helpers live outside lua/).
+package.path = project_root .. "/?.lua;" .. package.path
+
 -- Try common plenary locations (including CI clone path)
 local plenary_paths = {
     vim.fn.stdpath("data") .. "/lazy/plenary.nvim",

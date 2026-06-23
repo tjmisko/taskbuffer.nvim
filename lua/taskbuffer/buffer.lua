@@ -65,29 +65,14 @@ function M.refresh_and_restore_cursor()
     pcall(vim.api.nvim_win_set_cursor, 0, cursor)
 end
 
---- Build the command table for the Go CLI binary.
----@return string[]
-local function build_cmd()
-    local config = require("taskbuffer.config")
-    local cfg = config.values
-    local cmd = { cfg.task_bin }
-    for _, arg in ipairs(config.source_args()) do
-        table.insert(cmd, arg)
-    end
-    table.insert(cmd, "--config")
-    table.insert(cmd, config.config_json_arg())
-    table.insert(cmd, "list")
-    if show_markers then
-        table.insert(cmd, "-markers")
-    end
-    if not M.get_show_undated() then
-        table.insert(cmd, "--ignore-undated")
-    end
-    for _, tag in ipairs(active_tag_filter) do
-        table.insert(cmd, "--tag")
-        table.insert(cmd, tag)
-    end
-    return cmd
+--- Runtime options for the in-process Lua pipeline.
+---@return table
+local function list_opts()
+    return {
+        markers = show_markers,
+        ignore_undated = not M.get_show_undated(),
+        tags = active_tag_filter,
+    }
 end
 
 --- Write stdout content to the taskfile on disk.
@@ -106,33 +91,29 @@ local function write_taskfile(stdout)
     return true
 end
 
---- Run the Go binary synchronously to regenerate the taskfile on disk.
+--- Regenerate the taskfile on disk synchronously via the in-process pipeline.
 function M.refresh_taskfile()
-    local cmd = build_cmd()
-    local result = vim.system(cmd, { text = true }):wait()
-    if result.code ~= 0 then
-        vim.notify("[taskbuffer] task list failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
+    local text, err = require("taskbuffer.list").list(list_opts())
+    if err then
+        vim.notify("[taskbuffer] task list failed: " .. err, vim.log.levels.ERROR)
         return
     end
-    write_taskfile(result.stdout)
+    write_taskfile(text or "")
 end
 
---- Run the Go binary asynchronously and invoke callback on completion.
+--- Regenerate the taskfile asynchronously and invoke callback on completion.
 ---@param callback fun()
 function M.refresh_taskfile_async(callback)
-    local cmd = build_cmd()
-    vim.system(cmd, { text = true }, function(result)
-        if result.code ~= 0 then
-            vim.schedule(function()
-                vim.notify("[taskbuffer] task list failed: " .. (result.stderr or ""), vim.log.levels.ERROR)
-                refreshing = false
-            end)
+    -- list_async invokes its callback on the main thread (scan runs rg off
+    -- the UI loop, then parse/format run in a vim.schedule tick).
+    require("taskbuffer.list").list_async(list_opts(), function(text, err)
+        if err then
+            vim.notify("[taskbuffer] task list failed: " .. err, vim.log.levels.ERROR)
+            refreshing = false
             return
         end
-        vim.schedule(function()
-            write_taskfile(result.stdout)
-            callback()
-        end)
+        write_taskfile(text or "")
+        callback()
     end)
 end
 

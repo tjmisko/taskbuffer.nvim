@@ -8,7 +8,6 @@ A simple Neovim plugin for managing tasks defined in plain text. Tasks are store
 - Filter tasks by tag via [Telescope](https://github.com/nvim-telescope/telescope.nvim) picker. Support for other pickers forthcoming.
 - Shift task due dates with `<M-Left>` / `<M-Right>` in both taskfile and markdown buffers
 - Jump from taskfile line to source file location with `gf`
-- Create new tasks from the CLI with optional header-based insertion
 - Fully configurable: sources, keybindings, inbox location, task format
 - Start/stop/complete task timer with `::start`, `::stop`, `::complete` markers written to source files
 - Defer, mark irrelevant — all operations modify source files directly
@@ -17,8 +16,9 @@ A simple Neovim plugin for managing tasks defined in plain text. Tasks are store
 
 - **Neovim >= 0.10**
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH
-- [Go](https://go.dev/) >= 1.21 (for building the binary)
 - Optional: [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (for tag filtering)
+
+No build step or external binary required — the plugin is pure Lua.
 
 ## Installation
 
@@ -27,7 +27,6 @@ A simple Neovim plugin for managing tasks defined in plain text. Tasks are store
 ```lua
 {
     "tjmisko/taskbuffer.nvim",
-    build = "cd go && go build -o task_bin .",
     config = function()
         require("taskbuffer").setup({
             -- your overrides here
@@ -36,18 +35,11 @@ A simple Neovim plugin for managing tasks defined in plain text. Tasks are store
 }
 ```
 
-If your package manager doesn't support a `build` hook, build manually:
-
-```bash
-cd ~/.local/share/nvim/lazy/taskbuffer.nvim/go && go build -o task_bin .
-```
-
 ### packer.nvim
 
 ```lua
 use {
     "tjmisko/taskbuffer.nvim",
-    run = "cd go && go build -o task_bin .",
     config = function()
         require("taskbuffer").setup()
     end,
@@ -60,9 +52,6 @@ All options with their defaults — see `:help taskbuffer-configuration` for ful
 
 ```lua
 require("taskbuffer").setup({
-    -- Path to the compiled Go binary (auto-detected)
-    task_bin = "<plugin_root>/go/task_bin",
-
     -- State directory for current task tracking
     state_dir = "~/.local/state/task",
 
@@ -75,7 +64,7 @@ require("taskbuffer").setup({
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Notes" },
 
-    -- Default location for new tasks via `task create`
+    -- Default location for new tasks
     inbox = {
         file = "~/Notes/inbox.md",
         header = nil,  -- e.g. "## Tasks" to insert below a heading
@@ -98,7 +87,7 @@ require("taskbuffer").setup({
         },
     },
 
-    -- Task syntax formats (passed to Go binary)
+    -- Task syntax formats
     formats = {
         date = "%Y-%m-%d",
         time = "%H:%M",
@@ -204,7 +193,6 @@ The `require_tags` option restricts due date inheritance to files that have spec
 
 Run `:checkhealth taskbuffer` to verify your setup. The health check validates:
 - Neovim version (>= 0.10)
-- Go binary is built and executable
 - ripgrep is available
 - Source directories exist
 - telescope.nvim availability (optional)
@@ -253,32 +241,6 @@ Full example:
 | `:TasksClear` | Clear tag filters and refresh |
 | `:TasksUndated` | Open taskfile with undated tasks visible |
 
-### CLI Commands
-
-The Go binary can also be used directly:
-
-```bash
-task list [--tag TAG] [--markers] [--ignore-undated]  # List tasks (default)
-task do                            # Pick and start a task (fzf)
-task stop                          # Stop the current task
-task complete                      # Complete the current task
-task current                       # Print current task name
-task tags                          # List all tags
-task defer <file> <line>           # Defer a task
-task irrelevant <file> <line>      # Mark task irrelevant
-task unset <file> <line>           # Undo irrelevant
-task check <file> <line>           # Quick check-off
-task complete-at <file> <line>     # Complete a specific task
-task create [--file F] [--header H] <body>  # Create a new task
-```
-
-Global flags (before subcommand):
-
-```bash
-task --source ~/Notes --source ~/Work list
-task --config '{"state_dir":"/tmp/state"}' current
-```
-
 ## Keybindings
 
 ### Global (all filetypes)
@@ -324,15 +286,17 @@ Date shift, set today, and quickfix also work in visual mode on multiple tasks.
 ## Architecture
 
 ```
-Markdown files ──rg --json──> Go binary ──parse──> Task structs ──format──> .taskfile
-                                                                              |
-Neovim <── buffer.lua reads .taskfile <────────────────────────────────────────┘
-         keymaps.lua calls Go binary for mutations (defer, irrelevant, etc.)
+Markdown files ──rg --json──> scan.lua ──parse.lua──> tasks ──format.lua──> .taskfile
+                                                                             |
+Neovim <── buffer.lua reads .taskfile <──────────────────────────────────────┘
+         keymaps.lua → actions.lua mutate source files (defer, irrelevant, etc.)
 ```
 
-**Go binary** (`go/`): Scanning (`scan.go`), parsing (`parse.go`), formatting (`format.go`), horizon logic (`horizon.go`), date/time format conversion (`timeformat.go`), file mutation (`mutate.go`), timer state (`state.go`), frontmatter parsing (`frontmatter.go`).
+The plugin is pure Lua — the pipeline runs in-process, with `rg` (ripgrep) as the only external dependency.
 
-**Lua plugin** (`lua/taskbuffer/`): Config (`config.lua`), setup and public API (`init.lua`), buffer management (`buffer.lua`), autocmds (`autocmds.lua`), keymaps (`keymaps.lua`), commands (`commands.lua`), Telescope tag picker (`tags.lua`), undo/redo stack (`undo.lua`), utilities (`util.lua`), health check (`health.lua`).
+**Lua pipeline** (`lua/taskbuffer/`): scanning (`scan.lua`), parsing (`parse.lua`), formatting (`format.lua`), horizon logic (`horizon.lua`), strftime conversion (`strftime.lua`), file mutation (`mutate.lua`), timer state (`state.lua`), frontmatter parsing (`frontmatter.lua`), pipeline orchestration (`context.lua`, `list.lua`, `actions.lua`).
+
+**Lua plugin / UI** (`lua/taskbuffer/`): config (`config.lua`), setup and public API (`init.lua`), buffer management (`buffer.lua`), autocmds (`autocmds.lua`), keymaps (`keymaps.lua`), commands (`commands.lua`), Telescope tag picker (`tags.lua`), undo/redo stack (`undo.lua`), utilities (`util.lua`), health check (`health.lua`).
 
 ## Contributing
 

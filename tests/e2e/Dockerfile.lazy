@@ -1,18 +1,10 @@
 # E2E test: lazy.nvim installation
-# Two-stage: build Go binary, then test lazy.nvim plugin loading.
-FROM golang:1.22-alpine AS builder
-WORKDIR /build
-COPY go/ .
-RUN go build -o task_bin .
-
 FROM alpine:edge
 
 RUN apk add --no-cache neovim ripgrep git
 
-# Copy plugin source with pre-built binary
+# Copy plugin source
 COPY lua/ /plugin/lua/
-COPY go/ /plugin/go/
-COPY --from=builder /build/task_bin /plugin/go/task_bin
 COPY plugin/ /plugin/plugin/
 COPY syntax/ /plugin/syntax/
 COPY ftdetect/ /plugin/ftdetect/

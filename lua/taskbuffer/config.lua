@@ -61,7 +61,6 @@
 ---@field header string|nil optional heading to insert below
 
 ---@class TaskbufferConfig
----@field task_bin string path to the Go binary
 ---@field state_dir string directory for task state files
 ---@field tmpdir string directory for temporary taskfile output
 ---@field show_undated boolean whether to show undated tasks by default
@@ -73,23 +72,23 @@
 ---@field horizons_overlap string overlap strategy: "sorted"|"first_match"|"narrowest"
 ---@field week_start string first day of the week: "monday"|"sunday"|etc.
 ---@field frontmatter TaskbufferFrontmatter frontmatter configuration
+---@field strict boolean reject invalid dates instead of silently skipping (default false)
 
 ---@class TaskbufferConfigModule
 ---@field defaults TaskbufferConfig
 ---@field values TaskbufferConfig
 local M = {}
 
--- Auto-detect plugin root from this file's location
-local script_path = debug.getinfo(1, "S").source:sub(2)
-local plugin_root = vim.fn.fnamemodify(script_path, ":h:h:h")
-
 ---@type TaskbufferConfig
 M.defaults = {
-    task_bin = plugin_root .. "/go/task_bin",
     state_dir = "~/.local/state/task",
     tmpdir = "/tmp",
 
     show_undated = true,
+
+    -- Strict mode: reject invalid dates (e.g. 2026-13-45) instead of silently
+    -- skipping them. Default false preserves current in-plugin behavior.
+    strict = false,
 
     -- Horizon configuration (nil = use built-in defaults)
     horizons = nil,
@@ -99,7 +98,7 @@ M.defaults = {
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Notes" },
 
-    -- Default location for new tasks created via `task create`
+    -- Default location for new tasks
     inbox = {
         file = "~/Notes/inbox.md",
         header = nil,
@@ -116,7 +115,7 @@ M.defaults = {
         },
     },
 
-    -- Task syntax formats (passed to Go binary)
+    -- Task syntax formats
     formats = {
         date = "%Y-%m-%d",
         time = "%H:%M",
@@ -198,7 +197,6 @@ end
 --- Expand paths in the config that represent filesystem locations.
 ---@param cfg TaskbufferConfig
 local function expand_config_paths(cfg)
-    cfg.task_bin = expand_path(cfg.task_bin)
     cfg.state_dir = expand_path(cfg.state_dir)
     cfg.tmpdir = expand_path(cfg.tmpdir)
 

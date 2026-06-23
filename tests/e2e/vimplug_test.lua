@@ -1,11 +1,13 @@
 -- E2E test: install via vim-plug in headless Neovim.
 -- vim-plug is downloaded at runtime. The plugin source is at /plugin.
--- The Go binary is pre-built in the Docker image.
 
 -- Bootstrap vim-plug
 local plug_path = vim.fn.stdpath("data") .. "/site/autoload/plug.vim"
 vim.fn.system({
-    "curl", "-fLo", plug_path, "--create-dirs",
+    "curl",
+    "-fLo",
+    plug_path,
+    "--create-dirs",
     "https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim",
 })
 vim.cmd("source " .. plug_path)
