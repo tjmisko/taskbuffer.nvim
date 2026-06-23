@@ -73,6 +73,8 @@
 ---@field horizons_overlap string overlap strategy: "sorted"|"first_match"|"narrowest"
 ---@field week_start string first day of the week: "monday"|"sunday"|etc.
 ---@field frontmatter TaskbufferFrontmatter frontmatter configuration
+---@field strict boolean reject invalid dates instead of silently skipping (default false)
+---@field use_lua_pipeline boolean use the in-process Lua pipeline instead of the Go binary (migration flag)
 
 ---@class TaskbufferConfigModule
 ---@field defaults TaskbufferConfig
@@ -90,6 +92,15 @@ M.defaults = {
     tmpdir = "/tmp",
 
     show_undated = true,
+
+    -- Strict mode: reject invalid dates (e.g. 2026-13-45) instead of silently
+    -- skipping them. Default false preserves current in-plugin behavior.
+    strict = false,
+
+    -- Migration flag (strangler): when true, :Tasks and the action verbs run the
+    -- in-process Lua pipeline; when false they shell out to the Go binary. Flips
+    -- to true in Phase 4 and is removed with go/ in Phase 6.
+    use_lua_pipeline = false,
 
     -- Horizon configuration (nil = use built-in defaults)
     horizons = nil,
