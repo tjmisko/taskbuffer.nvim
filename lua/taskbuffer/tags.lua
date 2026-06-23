@@ -11,37 +11,13 @@ function M.pick_tags()
     local actions = require("telescope.actions")
     local action_state = require("telescope.actions.state")
 
-    local config = require("taskbuffer.config")
-    local cfg = config.values
+    local cfg = require("taskbuffer.config").values
     local buffer = require("taskbuffer.buffer")
 
-    local tags
-    if cfg.use_lua_pipeline then
-        local err
-        tags, err = require("taskbuffer.list").tags({})
-        if err then
-            vim.notify("[taskbuffer] failed to collect tags: " .. err, vim.log.levels.ERROR)
-            return
-        end
-    else
-        local cmd = cfg.task_bin
-        for _, arg in ipairs(config.source_args()) do
-            cmd = cmd .. " " .. vim.fn.shellescape(arg)
-        end
-        cmd = cmd .. " tags 2>/dev/null"
-
-        local handle = io.popen(cmd)
-        if not handle then
-            vim.notify("[taskbuffer] failed to run task tags", vim.log.levels.ERROR)
-            return
-        end
-        local output = handle:read("*a")
-        handle:close()
-
-        tags = {}
-        for line in output:gmatch("[^\n]+") do
-            table.insert(tags, line)
-        end
+    local tags, err = require("taskbuffer.list").tags({})
+    if err then
+        vim.notify("[taskbuffer] failed to collect tags: " .. err, vim.log.levels.ERROR)
+        return
     end
 
     if #tags == 0 then

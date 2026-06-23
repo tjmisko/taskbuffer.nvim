@@ -12,37 +12,17 @@ function M.check()
 
     local config = require("taskbuffer.config").values
 
-    -- 2. Pipeline mode + search backend
-    if config.use_lua_pipeline then
-        vim.health.ok("Using in-process Lua pipeline (no build step required)")
-        if vim.fn.executable("rg") == 1 then
-            vim.health.ok("ripgrep (rg) found")
-        elseif vim.fn.executable("grep") == 1 then
-            vim.health.warn("ripgrep (rg) not found — using slower grep fallback", {
-                "Install ripgrep for best performance: https://github.com/BurntSushi/ripgrep",
-            })
-        else
-            vim.health.error("neither rg nor grep found", {
-                "Install ripgrep: https://github.com/BurntSushi/ripgrep",
-            })
-        end
-        if vim.fn.executable(config.task_bin) == 1 then
-            vim.health.info("Legacy Go binary present (only used when use_lua_pipeline = false)")
-        end
+    -- 2. Search backend
+    if vim.fn.executable("rg") == 1 then
+        vim.health.ok("ripgrep (rg) found")
+    elseif vim.fn.executable("grep") == 1 then
+        vim.health.warn("ripgrep (rg) not found — using slower grep fallback", {
+            "Install ripgrep for best performance: https://github.com/BurntSushi/ripgrep",
+        })
     else
-        if vim.fn.executable(config.task_bin) == 1 then
-            vim.health.ok("Go binary found: " .. config.task_bin)
-        else
-            vim.health.error("Go binary not found: " .. config.task_bin, {
-                "Run: cd " .. vim.fn.fnamemodify(config.task_bin, ":h") .. " && go build -o task_bin .",
-                "Or set use_lua_pipeline = true to use the pure-Lua pipeline (no build).",
-            })
-        end
-        if vim.fn.executable("rg") == 1 then
-            vim.health.ok("ripgrep (rg) found")
-        else
-            vim.health.error("ripgrep (rg) not found", { "Install ripgrep: https://github.com/BurntSushi/ripgrep" })
-        end
+        vim.health.error("neither rg nor grep found", {
+            "Install ripgrep: https://github.com/BurntSushi/ripgrep",
+        })
     end
 
     -- 4. Source directories

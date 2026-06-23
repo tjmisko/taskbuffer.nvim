@@ -1,12 +1,8 @@
-.PHONY: build test test-lua test-e2e test-e2e-lazy test-e2e-vimplug \
+.PHONY: test test-lua test-e2e test-e2e-lazy test-e2e-vimplug \
 	test-e2e-us-dates test-e2e-eu-dates test-e2e-custom-checkbox \
 	test-e2e-12h-time test-e2e-minimal-wrapper test-e2e-all lint clean
 
-build:
-	cd go && go build -o task_bin .
-
-test:
-	cd go && go test ./...
+test: test-lua
 
 test-lua:
 	nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/"
@@ -52,4 +48,4 @@ lint:
 	selene lua/
 
 clean:
-	rm -f go/task_bin
+	rm -rf .deps .repro

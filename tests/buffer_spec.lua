@@ -1,5 +1,5 @@
 -- Buffer integration tests.
--- These require the Go binary to be built at go/task_bin.
+-- These exercise buffer state helpers (tag filter, marker toggles).
 
 local tb = require("taskbuffer")
 

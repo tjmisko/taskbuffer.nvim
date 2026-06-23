@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/../go"
+cd "$(dirname "$0")/.."
 
-echo "==> Building..."
-go build -o task_bin .
-
-echo "==> Running all tests..."
-go test -v -count=1 ./...
+echo "==> Running Lua tests..."
+nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/"
 
 echo ""
 echo "==> All tests passed"

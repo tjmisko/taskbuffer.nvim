@@ -1,1 +1,0 @@
-- [ ] Deeply nested task (@[[2026-02-17]])

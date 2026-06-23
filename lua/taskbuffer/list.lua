@@ -1,4 +1,4 @@
--- list.lua — the in-process pipeline that replaces `task_bin list`/`tags`.
+-- list.lua — the in-process pipeline that produces the taskfile list and tags.
 --
 -- Mirrors main.go:cmdList (163-231) and cmdTags (383-418) step for step. This
 -- is the only new seam with no Go counterpart: it assembles scan -> parse ->

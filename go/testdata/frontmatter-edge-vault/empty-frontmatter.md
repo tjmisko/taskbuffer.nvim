@@ -1,3 +1,0 @@
----
----
-- [ ] Task with empty frontmatter (@[[2026-02-17]])

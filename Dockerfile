@@ -1,10 +1,4 @@
-# Stage 1: build the Go binary
-FROM golang:1.22-alpine AS builder
-WORKDIR /build
-COPY go/ .
-RUN go build -o task_bin .
-
-# Stage 2: runtime with Neovim and ripgrep
+# Runtime with Neovim and ripgrep
 FROM alpine:edge
 
 # Install neovim and ripgrep
@@ -17,9 +11,6 @@ COPY syntax/ /plugin/syntax/
 COPY ftdetect/ /plugin/ftdetect/
 COPY doc/ /plugin/doc/
 COPY tests/e2e/ /plugin/tests/e2e/
-
-# Copy built Go binary
-COPY --from=builder /build/task_bin /plugin/go/task_bin
 
 # Clone plenary.nvim (needed by test infra)
 RUN git clone --depth 1 https://github.com/nvim-lua/plenary.nvim /deps/plenary.nvim
