@@ -52,6 +52,16 @@ jobs:
         env:
           TASKBUFFER_TEST_OBSIDIAN: ${{ github.workspace }}/.deps/obsidian.nvim
         run: python3 scripts/test-lua.py tests/interaction_spec.lua
+      - name: Install pinned Telescope for demo playback
+        if: matrix.os == 'ubuntu-latest' && matrix.neovim == 'stable'
+        uses: actions/checkout@v4
+        with:
+          repository: nvim-telescope/telescope.nvim
+          ref: 40aedd8a68c78a656a10a8d62d80c54af59420fb
+          path: .deps/telescope.nvim
+      - name: Verify demo playback and OBS recording protocol
+        if: matrix.os == 'ubuntu-latest' && matrix.neovim == 'stable'
+        run: make demo-check DEMO_ARGS='--deps .deps'
 
   lua-check:
     runs-on: ubuntu-latest
@@ -62,7 +72,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: latest
-          args: --check lua/ plugin/ tests/
+          args: --check lua/ plugin/ tests/ scripts/demo/
       - name: Install selene
         run: cargo install selene
       - name: Run selene

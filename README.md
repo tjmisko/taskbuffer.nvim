@@ -158,6 +158,9 @@ measurements, benchmarks, and interpreting the report.
 
 ## Help and contributing
 
+To record a usage video with scripted input and an on-screen key display, see
+the [demo recording guide](docs/demo.md).
+
 Start with `:help taskbuffer` and `:checkhealth taskbuffer`. If a task is missing,
 check that its file is saved under a configured source and that filters are
 cleared with `:Tasks`.

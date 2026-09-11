@@ -1,6 +1,6 @@
 .PHONY: test test-lua test-install bench helptags test-e2e test-e2e-lazy test-e2e-vimplug \
 	test-e2e-us-dates test-e2e-eu-dates test-e2e-custom-checkbox \
-	test-e2e-12h-time test-e2e-minimal-wrapper test-e2e-all lint clean
+	test-e2e-12h-time test-e2e-minimal-wrapper test-e2e-all lint clean demo demo-check
 
 test: test-lua
 
@@ -12,6 +12,13 @@ test-install:
 
 bench:
 	python3 scripts/benchmark.py $(BENCH_ARGS)
+
+demo:
+	python3 scripts/demo.py $(DEMO_ARGS)
+
+demo-check:
+	python3 scripts/demo.py --check $(DEMO_ARGS)
+	nvim --headless -u NONE -i NONE -l scripts/demo/test_obs.lua
 
 helptags:
 	nvim --headless -u NONE -i NONE -c 'helptags doc' -c 'qa!'
@@ -53,7 +60,7 @@ test-e2e-all: test-e2e test-e2e-lazy test-e2e-vimplug \
 	test-e2e-12h-time test-e2e-minimal-wrapper
 
 lint:
-	stylua --check lua/ plugin/ tests/
+	stylua --check lua/ plugin/ tests/ scripts/demo/
 	selene lua/
 
 clean:
