@@ -8,7 +8,7 @@
 -- one record per match as `<path>\0<lineno>:<text>\n`. The NUL after the path
 -- means arbitrary `:` / unicode in the matched text parses unambiguously, and
 -- the layout is ~10x cheaper to consume than vim.json.decode per line. grep
--- (`-Z`) emits a byte-identical layout, so _parse_output is shared verbatim.
+-- (`--null`) emits the same layout, so _parse_output is shared verbatim.
 --
 -- Default rg semantics are preserved for parity with the Go call: respects
 -- .gitignore, skips hidden + binary files, does NOT follow symlinks (symlink
@@ -118,10 +118,11 @@ local function build_scan_argv(pattern, paths)
         argv =
             { "rg", "--no-config", "--color=never", "--no-heading", "--with-filename", "-n", "--null", "-e", pattern }
     else
-        -- grep fallback (rg absent). -Z=NUL-after-path, -n=line numbers,
+        -- Use --null: macOS grep interprets -Z as decompression instead.
+        -- grep fallback (rg absent). --null=NUL-after-path, -n=line numbers,
         -- -r=recursive WITHOUT following symlinks (matches rg default; -R follows),
         -- -E=ERE (the alternation pattern needs it), -I=skip binary.
-        argv = { "grep", "-rnEHIZ", "--include=*.md", "-e", pattern }
+        argv = { "grep", "-rnEHI", "--null", "--include=*.md", "-e", pattern }
     end
     argv[#argv + 1] = "--"
     vim.list_extend(argv, paths)

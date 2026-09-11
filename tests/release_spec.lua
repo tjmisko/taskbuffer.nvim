@@ -40,6 +40,7 @@ describe("release action safety", function()
         vim.o.hidden = true
         dir = vim.fn.tempname()
         vim.fn.mkdir(dir .. "/vault", "p")
+        dir = vim.uv.fs_realpath(dir)
         path = dir .. "/vault/a note:work.md"
         write("- [ ] Example task (@[[2026-02-17]])\n")
         tb = require("taskbuffer")

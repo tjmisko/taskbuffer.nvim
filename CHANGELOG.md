@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preserve CRLF and missing final newlines in date edits and undo/redo.
 - Use private session directories for generated taskfiles to avoid collisions
   between Neovim instances; remove generated output on normal exit.
+- Fix macOS grep fallback flags and canonicalize generated taskfile paths.
 - Correct empty/list configuration overrides, avoid mutating caller options,
   and keep filename prefixes when scanning a single file.
 - Add action safety and installation regressions, isolate the test runner from

@@ -25,7 +25,7 @@ isolation, failed source writes, symlinks, and private generated output.
 
 ## Audit evidence
 
-On the local Neovim 0.12.4 installation, 432 tests passed with no failures/errors;
+On the local Neovim 0.12.4 installation, 433 tests passed with no failures/errors;
 StyLua, Selene, help-tag generation, and all three installation modes passed.
 A live Telescope smoke test opened the picker, listed tags, selected a tag, and
 refreshed the source taskbuffer successfully. The 10,000-task benchmark measured

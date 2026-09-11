@@ -113,6 +113,22 @@ describe("async taskfile buffers", function()
         vim.cmd("close!")
     end)
 
+    it("reuses the buffer when tmpdir is reached through a symlink", function()
+        local alias = dir .. "/alias"
+        assert(vim.uv.fs_symlink(dir, alias))
+        require("taskbuffer.config").values.tmpdir = alias
+        buffer.tasks()
+        wait_for(1)
+        requests[1].cb("# Today\nA task\n")
+        local buf = vim.api.nvim_get_current_buf()
+        local tick = vim.api.nvim_buf_get_changedtick(buf)
+        buffer.tasks()
+        wait_for(2)
+        requests[2].cb("# Today\nA task\n")
+        assert.are.equal(buf, vim.api.nvim_get_current_buf())
+        assert.are.equal(tick, vim.api.nvim_buf_get_changedtick(buf))
+    end)
+
     it("keeps contents/cursor/changedtick intact when output did not change", function()
         buffer.tasks()
         wait_for(1)

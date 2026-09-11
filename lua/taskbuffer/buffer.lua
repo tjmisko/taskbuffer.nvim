@@ -78,7 +78,9 @@ local function taskfile_path()
         if not directory then
             return nil, err
         end
-        directories[base] = directory
+        -- Neovim resolves directory symlinks in buffer names (notably /var on
+        -- macOS). Compare the same canonical spelling to avoid an edit! reload.
+        directories[base] = vim.uv.fs_realpath(directory) or directory
     end
     if not cleanup_registered then
         cleanup_registered = true

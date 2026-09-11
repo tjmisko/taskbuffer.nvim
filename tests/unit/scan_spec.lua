@@ -534,7 +534,7 @@ describe("single-file sources", function()
             assert.is_true(succeeded)
             assert.is_nil(err)
             assert.are.equal(1, #matches)
-            assert.are.equal(path, matches[1].path)
+            assert.are.equal(uv.fs_realpath(path), matches[1].path)
             assert.are.equal(1, matches[1].line_number)
         end)
     end
