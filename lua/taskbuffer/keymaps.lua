@@ -1,6 +1,5 @@
 local M = {}
 
-local keymaps_registered = false
 local util = require("taskbuffer.util")
 
 local function get_config()
@@ -346,234 +345,203 @@ local function shift_task_date_in_markdown(days)
     vim.notify("[taskbuffer] no date found on this line", vim.log.levels.WARN)
 end
 
-function M.setup_keymaps()
-    if keymaps_registered then
-        return
+-- Loaded only by a key action or a matching FileType event.
+function M.global_action(verb)
+    local filepath, linenumber = get_task_location_from_current_buffer()
+    util.run_task_cmd({ verb, filepath, tostring(linenumber) }, vim.bo.filetype == "taskfile")
+    if vim.bo.filetype ~= "taskfile" then
+        vim.cmd("edit!")
     end
-    keymaps_registered = true
+end
 
-    local augroup = vim.api.nvim_create_augroup("TaskBufferKeymaps", { clear = true })
+function M.attach_taskfile()
+    local config = get_config()
+    local state_path = config.state_dir .. "/current_task"
 
-    -- Global keymaps
-    map("n", "global", "note", "o<Tab>- [[<Esc>ma:pu=strftime('%F')<CR>\"aDdd`a\"apa]]: ")
+    map("n", "taskfile", "start_task", function()
+        local f = io.open(state_path, "r")
+        if f then
+            f:close()
+            local ctx = require("taskbuffer.context").build_context(config, {})
+            require("taskbuffer.actions").stop(ctx)
+        end
+        local line = vim.fn.getline(".")
+        local filepath = string.sub(line, 1, string.find(line, ":") - 1)
+        local linenumber =
+            string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
+        local datetime = os.time()
+        local function trim(s)
+            return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+        end
+        local task_content = string.match(line, "^.-|.-|.-|(.*)$")
+        task_content = task_content and task_content:match("^(.-)%s*::") or task_content
+        if task_content then
+            task_content = trim(task_content)
+        end
+        local g, err = io.open(state_path, "w")
+        if not g then
+            vim.notify("[taskbuffer] failed to write state: " .. err, vim.log.levels.ERROR)
+            return
+        end
+        g:write(datetime .. "\t" .. task_content .. "\t" .. filepath .. "\t" .. linenumber)
+        g:close()
+        local fmts = config.formats
+        local start_suffix = " "
+            .. fmts.marker_prefix
+            .. "start [["
+            .. os.date(fmts.date)
+            .. "]] "
+            .. os.date(fmts.time)
+        util.append_to_line(filepath, tonumber(linenumber), start_suffix)
+        require("taskbuffer.buffer").refresh_and_restore_cursor()
+    end, { buffer = true, desc = "Start task" })
 
-    map("n", "global", "complete", function()
-        local filepath, linenumber = get_task_location_from_current_buffer()
-        util.run_task_cmd({ "complete-at", filepath, tostring(linenumber) }, false)
-        vim.cmd("edit!")
-    end)
+    local function go_to_file()
+        local line = vim.fn.getline(".")
+        local filepath = string.sub(line, 1, string.find(line, ":") - 1)
+        local linenumber =
+            string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
+        vim.cmd("e " .. filepath)
+        vim.cmd("normal " .. linenumber .. "G")
+        vim.cmd("normal zz")
+    end
 
-    map("n", "global", "defer", function()
-        local filepath, linenumber = get_task_location_from_current_buffer()
-        util.run_task_cmd({ "defer", filepath, tostring(linenumber) }, false)
-        vim.cmd("edit!")
-    end)
+    map("n", "taskfile", "go_to_file", go_to_file, { buffer = true, desc = "Go to task source" })
+    vim.keymap.set("n", "<CR>", go_to_file, { buffer = true, desc = "Go to task source" })
 
-    map("n", "global", "check_off", function()
-        local filepath, linenumber = get_task_location_from_current_buffer()
-        util.run_task_cmd({ "check", filepath, tostring(linenumber) }, false)
-        vim.cmd("edit!")
-    end)
+    map("n", "taskfile", "irrelevant", function()
+        local filepath, linenumber = get_task_location_from_taskfile()
+        util.run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, true)
+    end, { buffer = true })
 
-    map("n", "global", "irrelevant", function()
-        local filepath, linenumber = get_task_location_from_current_buffer()
-        util.run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, false)
-        vim.cmd("edit!")
-    end)
+    map("n", "taskfile", "undo_irrelevant", function()
+        local filepath, linenumber = get_task_location_from_taskfile()
+        util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
+    end, { buffer = true })
 
-    map("n", "global", "undo_irrelevant", function()
-        local filepath, linenumber = get_task_location_from_current_buffer()
-        util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, false)
-        vim.cmd("edit!")
-    end)
+    map("n", "taskfile", "filter_tags", function()
+        require("taskbuffer.tags").pick_tags()
+    end, { buffer = true, desc = "Filter tasks by tag" })
 
-    -- Taskfile-specific keymaps
-    vim.api.nvim_create_autocmd("FileType", {
-        group = augroup,
-        pattern = { "taskfile" },
-        callback = function()
-            local config = get_config()
-            local state_path = config.state_dir .. "/current_task"
+    map("n", "taskfile", "reset_filters", function()
+        local buffer = require("taskbuffer.buffer")
+        buffer.clear_tag_filter()
+        buffer.set_show_markers(false)
+        buffer.set_show_undated(require("taskbuffer.config").values.show_undated)
+        buffer.refresh_view()
+        vim.notify("[taskbuffer] filters reset", vim.log.levels.INFO)
+    end, { buffer = true, desc = "Reset task filters" })
 
-            map("n", "taskfile", "start_task", function()
-                local f = io.open(state_path, "r")
-                if f then
-                    f:close()
-                    local ctx = require("taskbuffer.context").build_context(config, {})
-                    require("taskbuffer.actions").stop(ctx)
-                end
-                local line = vim.fn.getline(".")
-                local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-                local linenumber =
-                    string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
-                local datetime = os.time()
-                local function trim(s)
-                    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
-                end
-                local task_content = string.match(line, "^.-|.-|.-|(.*)$")
-                task_content = task_content and task_content:match("^(.-)%s*::") or task_content
-                if task_content then
-                    task_content = trim(task_content)
-                end
-                local g, err = io.open(state_path, "w")
-                if not g then
-                    vim.notify("[taskbuffer] failed to write state: " .. err, vim.log.levels.ERROR)
-                    return
-                end
-                g:write(datetime .. "\t" .. task_content .. "\t" .. filepath .. "\t" .. linenumber)
-                g:close()
-                local fmts = config.formats
-                local start_suffix = " "
-                    .. fmts.marker_prefix
-                    .. "start [["
-                    .. os.date(fmts.date)
-                    .. "]] "
-                    .. os.date(fmts.time)
-                util.append_to_line(filepath, tonumber(linenumber), start_suffix)
-            end, { buffer = true, desc = "Start task" })
+    map("n", "taskfile", "toggle_undated", function()
+        local buffer = require("taskbuffer.buffer")
+        buffer.set_show_undated(not buffer.get_show_undated())
+        buffer.refresh_view()
+        vim.notify(
+            buffer.get_show_undated() and "[taskbuffer] showing undated tasks" or "[taskbuffer] hiding undated tasks",
+            vim.log.levels.INFO
+        )
+    end, { buffer = true, desc = "Toggle undated tasks" })
 
-            local function go_to_file()
-                local line = vim.fn.getline(".")
-                local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-                local linenumber =
-                    string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
-                vim.cmd("e " .. filepath)
-                vim.cmd("normal " .. linenumber .. "G")
-                vim.cmd("normal zz")
-            end
+    map("n", "taskfile", "toggle_markers", function()
+        local buffer = require("taskbuffer.buffer")
+        buffer.set_show_markers(not buffer.get_show_markers())
+        buffer.refresh_view()
+        vim.notify(
+            buffer.get_show_markers() and "[taskbuffer] showing markers" or "[taskbuffer] hiding markers",
+            vim.log.levels.INFO
+        )
+    end, { buffer = true, desc = "Toggle junk markers" })
 
-            map("n", "taskfile", "go_to_file", go_to_file, { buffer = true, desc = "Go to task source" })
-            vim.keymap.set("n", "<CR>", go_to_file, { buffer = true, desc = "Go to task source" })
+    map("n", "taskfile", "shift_date_back", function()
+        shift_task_date_in_taskfile(-vim.v.count1)
+    end, { buffer = true, desc = "Shift task date back" })
 
-            map("n", "taskfile", "irrelevant", function()
-                local filepath, linenumber = get_task_location_from_taskfile()
-                util.run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, true)
-            end, { buffer = true })
+    map("n", "taskfile", "shift_date_forward", function()
+        shift_task_date_in_taskfile(vim.v.count1)
+    end, { buffer = true, desc = "Shift task date forward" })
 
-            map("n", "taskfile", "undo_irrelevant", function()
-                local filepath, linenumber = get_task_location_from_taskfile()
-                util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
-            end, { buffer = true })
+    map("n", "taskfile", "set_date_today", function()
+        set_date_today_in_taskfile()
+    end, { buffer = true, desc = "Set task date to today" })
 
-            map("n", "taskfile", "filter_tags", function()
-                require("taskbuffer.tags").pick_tags()
-            end, { buffer = true, desc = "Filter tasks by tag" })
+    map("v", "taskfile", "set_date_today", function()
+        local lines = util.get_visual_lines()
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+        set_task_dates_today_bulk(lines)
+    end, { buffer = true, desc = "Set selected task dates to today" })
 
-            map("n", "taskfile", "reset_filters", function()
-                local buffer = require("taskbuffer.buffer")
-                buffer.clear_tag_filter()
-                buffer.set_show_markers(false)
-                buffer.set_show_undated(require("taskbuffer.config").values.show_undated)
-                buffer.refresh_and_restore_cursor()
-                vim.notify("[taskbuffer] filters reset", vim.log.levels.INFO)
-            end, { buffer = true, desc = "Reset task filters" })
+    map("v", "taskfile", "shift_date_back", function()
+        local count = vim.v.count1
+        local lines = util.get_visual_lines()
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+        shift_task_dates_bulk(lines, -count)
+    end, { buffer = true, desc = "Shift selected task dates back" })
 
-            map("n", "taskfile", "toggle_undated", function()
-                local buffer = require("taskbuffer.buffer")
-                buffer.set_show_undated(not buffer.get_show_undated())
-                buffer.refresh_and_restore_cursor()
-                vim.notify(
-                    buffer.get_show_undated() and "[taskbuffer] showing undated tasks"
-                        or "[taskbuffer] hiding undated tasks",
-                    vim.log.levels.INFO
-                )
-            end, { buffer = true, desc = "Toggle undated tasks" })
+    map("v", "taskfile", "shift_date_forward", function()
+        local count = vim.v.count1
+        local lines = util.get_visual_lines()
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+        shift_task_dates_bulk(lines, count)
+    end, { buffer = true, desc = "Shift selected task dates forward" })
 
-            map("n", "taskfile", "toggle_markers", function()
-                local buffer = require("taskbuffer.buffer")
-                buffer.set_show_markers(not buffer.get_show_markers())
-                buffer.refresh_and_restore_cursor()
-                vim.notify(
-                    buffer.get_show_markers() and "[taskbuffer] showing markers" or "[taskbuffer] hiding markers",
-                    vim.log.levels.INFO
-                )
-            end, { buffer = true, desc = "Toggle junk markers" })
+    map("v", "taskfile", "quickfix", function()
+        local lines = util.get_visual_lines()
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+        local qf_list = util.taskfile_lines_to_qf(lines)
+        if #qf_list == 0 then
+            vim.notify("[taskbuffer] no tasks in selection", vim.log.levels.WARN)
+            return
+        end
+        vim.fn.setqflist(qf_list, "r")
+        vim.cmd("copen")
+    end, { buffer = true, desc = "Send selected tasks to quickfix" })
 
-            map("n", "taskfile", "shift_date_back", function()
-                shift_task_date_in_taskfile(-vim.v.count1)
-            end, { buffer = true, desc = "Shift task date back" })
+    -- Undo/redo keymaps: true = auto-detect, string = use as-is, false = skip
+    local undo_key = binding("taskfile", "undo")
+    if undo_key == true then
+        undo_key = detect_key("undo", "u")
+    end
+    if undo_key then
+        vim.keymap.set("n", undo_key, function()
+            require("taskbuffer.undo").undo()
+        end, { buffer = true, desc = "Undo last date change" })
+    end
 
-            map("n", "taskfile", "shift_date_forward", function()
-                shift_task_date_in_taskfile(vim.v.count1)
-            end, { buffer = true, desc = "Shift task date forward" })
+    local redo_key = binding("taskfile", "redo")
+    if redo_key == true then
+        redo_key = detect_key("redo", "<C-r>")
+    end
+    if redo_key then
+        vim.keymap.set("n", redo_key, function()
+            require("taskbuffer.undo").redo()
+        end, { buffer = true, desc = "Redo last date change" })
+    end
+end
 
-            map("n", "taskfile", "set_date_today", function()
-                set_date_today_in_taskfile()
-            end, { buffer = true, desc = "Set task date to today" })
+function M.markdown_action(action)
+    if action == "set_date_today" then
+        set_date_today_in_markdown()
+    else
+        shift_task_date_in_markdown(action == "shift_date_back" and -vim.v.count1 or vim.v.count1)
+    end
+end
 
-            map("v", "taskfile", "set_date_today", function()
-                local lines = util.get_visual_lines()
-                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-                set_task_dates_today_bulk(lines)
-            end, { buffer = true, desc = "Set selected task dates to today" })
+function M.attach_markdown()
+    map("n", "markdown", "set_date_today", function()
+        set_date_today_in_markdown()
+    end, { buffer = true, desc = "Set task date to today" })
 
-            map("v", "taskfile", "shift_date_back", function()
-                local count = vim.v.count1
-                local lines = util.get_visual_lines()
-                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-                shift_task_dates_bulk(lines, -count)
-            end, { buffer = true, desc = "Shift selected task dates back" })
+    map("n", "markdown", "shift_date_back", function()
+        shift_task_date_in_markdown(-vim.v.count1)
+    end, { buffer = true, desc = "Shift task date back" })
 
-            map("v", "taskfile", "shift_date_forward", function()
-                local count = vim.v.count1
-                local lines = util.get_visual_lines()
-                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-                shift_task_dates_bulk(lines, count)
-            end, { buffer = true, desc = "Shift selected task dates forward" })
+    map("n", "markdown", "shift_date_forward", function()
+        shift_task_date_in_markdown(vim.v.count1)
+    end, { buffer = true, desc = "Shift task date forward" })
+end
 
-            map("v", "taskfile", "quickfix", function()
-                local lines = util.get_visual_lines()
-                vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-                local qf_list = util.taskfile_lines_to_qf(lines)
-                if #qf_list == 0 then
-                    vim.notify("[taskbuffer] no tasks in selection", vim.log.levels.WARN)
-                    return
-                end
-                vim.fn.setqflist(qf_list, "r")
-                vim.cmd("copen")
-            end, { buffer = true, desc = "Send selected tasks to quickfix" })
-
-            -- Undo/redo keymaps: true = auto-detect, string = use as-is, false = skip
-            local undo_key = binding("taskfile", "undo")
-            if undo_key == true then
-                undo_key = detect_key("undo", "u")
-            end
-            if undo_key then
-                vim.keymap.set("n", undo_key, function()
-                    require("taskbuffer.undo").undo()
-                end, { buffer = true, desc = "Undo last date change" })
-            end
-
-            local redo_key = binding("taskfile", "redo")
-            if redo_key == true then
-                redo_key = detect_key("redo", "<C-r>")
-            end
-            if redo_key then
-                vim.keymap.set("n", redo_key, function()
-                    require("taskbuffer.undo").redo()
-                end, { buffer = true, desc = "Redo last date change" })
-            end
-        end,
-    })
-
-    -- Markdown date shift keymaps
-    vim.api.nvim_create_autocmd("FileType", {
-        group = augroup,
-        pattern = { "markdown" },
-        callback = function()
-            map("n", "markdown", "set_date_today", function()
-                set_date_today_in_markdown()
-            end, { buffer = true, desc = "Set task date to today" })
-
-            map("n", "markdown", "shift_date_back", function()
-                shift_task_date_in_markdown(-vim.v.count1)
-            end, { buffer = true, desc = "Shift task date back" })
-
-            map("n", "markdown", "shift_date_forward", function()
-                shift_task_date_in_markdown(vim.v.count1)
-            end, { buffer = true, desc = "Shift task date forward" })
-        end,
-    })
+function M.setup_keymaps()
+    require("taskbuffer.bootstrap").register()
 end
 
 return M

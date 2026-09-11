@@ -1,4 +1,5 @@
 local M = {}
+local profile = require("taskbuffer.profile")
 
 ---@type string[]
 local active_tag_filter = {}
@@ -54,117 +55,216 @@ function M.set_show_undated(val)
     show_undated = val
 end
 
---- Refresh the taskfile and restore the cursor to its previous position.
-function M.refresh_and_restore_cursor()
-    local cursor = vim.api.nvim_win_get_cursor(0)
-    M.set_refreshing(true)
-    M.refresh_taskfile()
-    vim.cmd("edit!")
-    vim.bo.readonly = true
-    M.set_refreshing(false)
-    pcall(vim.api.nvim_win_set_cursor, 0, cursor)
-end
+local active
+local published = {}
+local last_written
 
---- Runtime options for the in-process Lua pipeline.
----@return table
-local function list_opts()
+local function list_opts(reuse)
     return {
         markers = show_markers,
         ignore_undated = not M.get_show_undated(),
-        tags = active_tag_filter,
+        tags = vim.list_slice(active_tag_filter),
+        reuse = reuse,
     }
 end
 
---- Write stdout content to the taskfile on disk.
----@param stdout string
----@return boolean
-local function write_taskfile(stdout)
-    local cfg = require("taskbuffer.config").values
-    local filepath = cfg.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
-    local f, err = io.open(filepath, "w")
-    if not f then
-        vim.notify("[taskbuffer] failed to write taskfile: " .. err, vim.log.levels.ERROR)
-        return false
+local function taskfile_path()
+    return require("taskbuffer.config").values.tmpdir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile"
+end
+
+local function write_taskfile(text, path)
+    if last_written and last_written.path == path and last_written.text == text then
+        return true
     end
-    f:write(stdout)
-    f:close()
+    local file, err = io.open(path, "w")
+    if not file then
+        return nil, err
+    end
+    local ok, failure = file:write(text)
+    local closed, close_err = file:close()
+    if not ok or not closed then
+        return nil, failure or close_err
+    end
+    last_written = { path = path, text = text }
     return true
 end
+write_taskfile = profile.wrap("taskfile.write", write_taskfile)
 
---- Regenerate the taskfile on disk synchronously via the in-process pipeline.
-function M.refresh_taskfile()
-    local text, err = require("taskbuffer.list").list(list_opts())
-    if err then
-        vim.notify("[taskbuffer] task list failed: " .. err, vim.log.levels.ERROR)
+-- Update only the requested buffer, preserving each window's cursor/view. No
+-- edit! round trip, FileType replay, or touching the buffer the user moved to.
+local function publish(buf, text)
+    local previous = published[buf]
+    if previous and previous.text == text and previous.tick == vim.api.nvim_buf_get_changedtick(buf) then
         return
     end
-    write_taskfile(text or "")
+    local views = {}
+    for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+        views[win] = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+    end
+    local lines = vim.split(text, "\n", { plain = true })
+    if lines[#lines] == "" then
+        table.remove(lines)
+    end
+    local modifiable = vim.bo[buf].modifiable
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modified = false
+    vim.bo[buf].readonly = true
+    vim.bo[buf].modifiable = modifiable
+    published[buf] = { text = text, tick = vim.api.nvim_buf_get_changedtick(buf) }
+    for win, view in pairs(views) do
+        if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
+            view.lnum = math.min(view.lnum, vim.api.nvim_buf_line_count(buf))
+            vim.api.nvim_win_call(win, function()
+                vim.fn.winrestview(view)
+            end)
+        end
+    end
+end
+publish = profile.wrap("taskfile.publish", publish)
+
+function M.cancel_refresh(buf)
+    if active and (not buf or active.buf == buf) then
+        if active.cancel then
+            active.cancel()
+        end
+        profile.finish(active.span)
+        active = nil
+        refreshing = false
+    end
 end
 
---- Regenerate the taskfile asynchronously and invoke callback on completion.
----@param callback fun()
-function M.refresh_taskfile_async(callback)
-    -- list_async invokes its callback on the main thread (scan runs rg off
-    -- the UI loop, then parse/format run in a vim.schedule tick).
-    require("taskbuffer.list").list_async(list_opts(), function(text, err)
-        if err then
-            vim.notify("[taskbuffer] task list failed: " .. err, vim.log.levels.ERROR)
-            refreshing = false
+function M.release(buf)
+    M.cancel_refresh(buf)
+    published[buf] = nil
+end
+
+-- Synchronous compatibility API for scripts only.
+function M.refresh_taskfile()
+    local text, err = require("taskbuffer.list").list(list_opts(false))
+    if not err then
+        local ok
+        ok, err = write_taskfile(text or "", taskfile_path())
+        if ok then
+            return true
+        end
+    end
+    vim.notify("[taskbuffer] task list failed: " .. tostring(err), vim.log.levels.ERROR)
+    return false
+end
+
+-- Coalesce identical pending requests; supersede changed views/source mutations.
+-- The first require/scan is scheduled so opening an empty taskfile returns first.
+function M.refresh_taskfile_async(callback, opts)
+    opts = opts or {}
+    local buf = opts.buf or vim.api.nvim_get_current_buf()
+    local config = require("taskbuffer.config").values
+    local runtime = list_opts(opts.reuse)
+    runtime.force = opts.force
+    if opts.force and package.loaded["taskbuffer.list"] then
+        require("taskbuffer.list").invalidate()
+    end
+    local key = vim.json.encode({ runtime.markers, runtime.ignore_undated, runtime.tags })
+    if active and active.buf == buf and active.key == key and active.config == config and not opts.force then
+        if callback then
+            active.callbacks[#active.callbacks + 1] = callback
+        end
+        return
+    end
+    M.cancel_refresh()
+    local request = { buf = buf, key = key, config = config, callbacks = {} }
+    if callback then
+        request.callbacks[1] = callback
+    end
+    active = request
+    refreshing = true
+    local path = taskfile_path()
+    local span = profile.begin("refresh.async.wall")
+    request.span = span
+    vim.schedule(function()
+        if active ~= request then
+            profile.finish(span)
             return
         end
-        write_taskfile(text or "")
-        callback()
+        local function complete(text, err)
+            if active ~= request then
+                return
+            end
+            if not vim.api.nvim_buf_is_loaded(buf) then
+                M.cancel_refresh(buf)
+                return
+            end
+            local ok, failure = pcall(function()
+                if err then
+                    error(err, 0)
+                end
+                local written, write_err = write_taskfile(text or "", path)
+                if not written then
+                    error(write_err, 0)
+                end
+                publish(buf, text or "")
+            end)
+            active = nil
+            refreshing = false
+            profile.finish(span)
+            if not ok then
+                vim.notify("[taskbuffer] task list failed: " .. tostring(failure), vim.log.levels.ERROR)
+            end
+            for _, cb in ipairs(request.callbacks) do
+                cb(ok and nil or failure)
+            end
+        end
+        local ok, cancel = pcall(function()
+            return require("taskbuffer.list").list_async(runtime, complete)
+        end)
+        if ok then
+            request.cancel = cancel
+        else
+            complete(nil, cancel)
+        end
     end)
 end
 
---- Delegate to autocmds module for backward compat.
+function M.refresh_and_restore_cursor(callback)
+    if vim.bo.filetype == "taskfile" then
+        M.refresh_taskfile_async(callback, { force = true })
+    end
+end
+
+-- Filters/markers affect only presentation, so reuse parsed source data.
+function M.refresh_view()
+    M.refresh_taskfile_async(nil, { reuse = true })
+end
+
 function M.setup_autocmds()
     require("taskbuffer.autocmds").register()
 end
 
 function M.tasks()
     M.clear_tag_filter()
-    local cfg = require("taskbuffer.config").values
-    local filepath = cfg.tmpdir .. "/" .. vim.fn.strftime("%F") .. ".taskfile"
-    if vim.uv.fs_stat(filepath) then
-        vim.cmd("edit! " .. filepath)
-        vim.bo.readonly = true
-        refreshing = true
-        M.refresh_taskfile_async(function()
-            vim.cmd("edit!")
-            vim.bo.readonly = true
-            refreshing = false
-        end)
-    else
-        refreshing = true
-        M.refresh_taskfile()
-        vim.cmd("edit! " .. filepath)
-        vim.bo.readonly = true
-        refreshing = false
+    local path = taskfile_path()
+    if vim.api.nvim_buf_get_name(0) ~= path then
+        vim.cmd("edit " .. vim.fn.fnameescape(path))
     end
+    vim.bo.readonly = true
+    if vim.bo.filetype ~= "taskfile" then
+        vim.bo.filetype = "taskfile"
+    end
+    M.refresh_taskfile_async()
 end
 
 function M.tasks_clear()
     M.clear_tag_filter()
-    local cfg = require("taskbuffer.config").values
-    local filepath = cfg.tmpdir .. "/" .. vim.fn.strftime("%F") .. ".taskfile"
-    if vim.uv.fs_stat(filepath) then
-        vim.cmd("edit!")
-        vim.bo.readonly = true
-        refreshing = true
-        M.refresh_taskfile_async(function()
-            vim.cmd("edit!")
-            vim.bo.readonly = true
-            refreshing = false
-        end)
+    if vim.bo.filetype == "taskfile" then
+        M.refresh_view()
     else
-        refreshing = true
-        M.refresh_taskfile()
-        vim.cmd("edit! " .. filepath)
-        vim.bo.readonly = true
-        refreshing = false
+        M.tasks()
     end
     vim.notify("[taskbuffer] tag filter cleared", vim.log.levels.INFO)
 end
 
+M.refresh_taskfile = profile.wrap("refresh.sync", M.refresh_taskfile)
+M.refresh_and_restore_cursor = profile.wrap("refresh.request", M.refresh_and_restore_cursor)
+M.tasks = profile.wrap("tasks.command", M.tasks)
+M.tasks_clear = profile.wrap("tasks_clear.command", M.tasks_clear)
 return M

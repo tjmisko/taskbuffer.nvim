@@ -5,6 +5,7 @@ end
 
 local M = {}
 
+local profile = require("taskbuffer.profile")
 local config = require("taskbuffer.config")
 
 --- Alias for backward compatibility; points to the live config values.
@@ -15,30 +16,32 @@ M.source_args = config.source_args
 M.config_json_arg = config.config_json_arg
 
 function M.setup(opts)
-    config.apply(opts)
+    profile.measure("setup.config", config.apply, opts)
     M.config = config.values
-
-    -- Ensure helptags are generated (needed for dev checkouts where
-    -- the plugin manager hasn't run :helptags automatically).
-    local doc_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h") .. "/doc"
-    if vim.fn.isdirectory(doc_dir) == 1 then
-        vim.cmd("silent! helptags " .. vim.fn.fnameescape(doc_dir))
+    local buffer = package.loaded["taskbuffer.buffer"]
+    if buffer and buffer.cancel_refresh then
+        buffer.cancel_refresh()
+    end
+    local list = package.loaded["taskbuffer.list"]
+    if list then
+        list.invalidate()
     end
 
-    require("taskbuffer.autocmds").register()
-    require("taskbuffer.keymaps").setup_keymaps()
+    profile.measure("setup.entrypoints", function()
+        require("taskbuffer.bootstrap").register()
+    end)
 end
 
 function M.tasks()
-    require("taskbuffer.autocmds").register()
-    require("taskbuffer.keymaps").setup_keymaps()
+    require("taskbuffer.bootstrap").register()
     require("taskbuffer.buffer").tasks()
 end
 
 function M.tasks_clear()
-    require("taskbuffer.autocmds").register()
-    require("taskbuffer.keymaps").setup_keymaps()
+    require("taskbuffer.bootstrap").register()
     require("taskbuffer.buffer").tasks_clear()
 end
+
+M.setup = profile.wrap("setup", M.setup)
 
 return M

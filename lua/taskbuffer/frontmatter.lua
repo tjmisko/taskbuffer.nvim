@@ -14,6 +14,7 @@
 local strftime = require("taskbuffer.strftime")
 
 local M = {}
+local async = require("taskbuffer.async")
 
 -- ── per-refresh cache (blueprint §3, overview §3.4) ───────────────────────────
 -- path -> Frontmatter table, or `false` to memoize "no usable FM here".
@@ -191,12 +192,14 @@ end
 ---@param path string
 ---@return table|nil fm  -- { fields=<map>, tags=<string[]>, lines=<map> }
 function M.parse_frontmatter(path)
-    local cached = cache[path]
+    local job = async.context()
+    local entries = job and job.frontmatter_cache or cache
+    local cached = entries[path]
     if cached ~= nil then
         return cached or nil -- `false` memoizes "none"
     end
     local fm = parse_head(path)
-    cache[path] = fm or false
+    entries[path] = fm or false
     return fm
 end
 -- Blueprint-03 alias (Scan/CONTEXT references frontmatter.read).
@@ -205,7 +208,12 @@ M.read = M.parse_frontmatter
 --- Clear the whole cache. Called once at the START of every refresh
 --- (== ResetFrontmatterCache). Integration relies on this for fresh reads.
 function M.reset()
-    cache = {}
+    local job = async.context()
+    if job then
+        job.frontmatter_cache = {}
+    else
+        cache = {}
+    end
 end
 
 --- Drop a single cache entry (belt-and-suspenders for write helpers, §5.D).
@@ -334,6 +342,7 @@ end
 ---@param tasks table[]
 function M.merge_tags(tasks)
     for _, task in ipairs(tasks) do
+        async.checkpoint()
         local fm = M.parse_frontmatter(task.file_path)
         if fm and #fm.tags > 0 then
             task.tags = task.tags or {}
@@ -372,6 +381,7 @@ function M.filter_completed(tasks, fm_cfg)
     local checked = {}
     local out = {}
     for _, t in ipairs(tasks) do
+        async.checkpoint()
         if t.due_date ~= nil then
             out[#out + 1] = t -- inline-dated always kept
         else
@@ -411,6 +421,7 @@ function M.merge_due(tasks, fm_cfg, date_fmt, date_errors)
     local spec = strftime.compile(date_fmt)
 
     for _, task in ipairs(tasks) do
+        async.checkpoint()
         if task.due_date == nil then
             local fm = M.parse_frontmatter(task.file_path)
             if fm then

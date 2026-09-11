@@ -23,25 +23,31 @@ function M.register()
         callback = discard_changes,
     })
 
-    -- Refresh on BufEnter (async)
-    vim.api.nvim_create_autocmd({ "BufEnter" }, {
+    -- No global polling or source scans: refresh only while a taskfile is shown.
+    vim.api.nvim_create_autocmd("BufEnter", {
         group = augroup,
         pattern = "*taskfile",
-        callback = function()
-            local buffer = require("taskbuffer.buffer")
-            local buf = vim.api.nvim_get_current_buf()
-            vim.api.nvim_set_option_value("readonly", true, { buf = buf })
-            if buffer.get_refreshing() then
-                return
+        callback = function(event)
+            vim.bo[event.buf].readonly = true
+            require("taskbuffer.buffer").refresh_taskfile_async(nil, { buf = event.buf })
+        end,
+    })
+    vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, {
+        group = augroup,
+        pattern = "*taskfile",
+        callback = function(event)
+            local tags = package.loaded["taskbuffer.tags"]
+            if tags then
+                tags.cancel(event.buf)
             end
-            buffer.set_refreshing(true)
-            buffer.refresh_taskfile_async(function()
-                vim.cmd("edit!")
-                vim.bo.readonly = true
-                buffer.set_refreshing(false)
-                local row = vim.api.nvim_win_get_cursor(0)[1]
-                vim.api.nvim_win_set_cursor(0, { row, 0 })
-            end)
+            local buffer = package.loaded["taskbuffer.buffer"]
+            if buffer then
+                if event.event == "BufHidden" then
+                    buffer.cancel_refresh(event.buf)
+                else
+                    buffer.release(event.buf)
+                end
+            end
         end,
     })
 end

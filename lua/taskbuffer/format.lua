@@ -16,6 +16,7 @@ local horizon = require("taskbuffer.horizon")
 local strftime = require("taskbuffer.strftime")
 
 local M = {}
+local async = require("taskbuffer.async")
 
 ---@class FormatOpts
 ---@field markers boolean|nil        -- show marker column (default false)
@@ -222,6 +223,7 @@ function M.format_taskfile(tasks, now, opts)
     if opts.tag_filter ~= nil and #opts.tag_filter > 0 then
         local filtered = {}
         for _, t in ipairs(tasks) do
+            async.checkpoint()
             if M.task_matches_tags(t, opts.tag_filter) then
                 filtered[#filtered + 1] = t
             end
@@ -251,6 +253,7 @@ function M.format_taskfile(tasks, now, opts)
     local dated = {}
     local undated = {}
     for _, t in ipairs(tasks) do
+        async.checkpoint()
         if t.due_date ~= nil then
             dated[#dated + 1] = t
         else
@@ -259,7 +262,7 @@ function M.format_taskfile(tasks, now, opts)
     end
 
     -- Sort dated: date, then file path, then sort_last after regular, then line.
-    table.sort(dated, function(a, b)
+    async.sort(dated, function(a, b)
         if a.due_date ~= b.due_date then
             return a.due_date < b.due_date
         end
@@ -275,7 +278,7 @@ function M.format_taskfile(tasks, now, opts)
     end)
 
     -- Sort undated: file path, then sort_last, then line.
-    table.sort(undated, function(a, b)
+    async.sort(undated, function(a, b)
         if a.file_path ~= b.file_path then
             return a.file_path < b.file_path
         end
@@ -297,6 +300,7 @@ function M.format_taskfile(tasks, now, opts)
     local last_interval = nil
 
     for _, t in ipairs(dated) do
+        async.checkpoint()
         local date = t.due_date
 
         if overlap == "first_match" then
@@ -338,6 +342,7 @@ function M.format_taskfile(tasks, now, opts)
         out[#out + 1] = undated_label
         out[#out + 1] = "\n"
         for _, t in ipairs(undated) do
+            async.checkpoint()
             out[#out + 1] = M.format_task_line(t, opts)
             out[#out + 1] = "\n"
         end

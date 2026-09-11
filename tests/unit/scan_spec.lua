@@ -451,3 +451,69 @@ describe("scan.build_pattern", function()
         assert.are.equal("- \\[x\\]", p)
     end)
 end)
+
+describe("async process lifecycle", function()
+    local system
+    local dir
+    before_each(function()
+        system = vim.system
+        dir = make_vault()
+    end)
+    after_each(function()
+        vim.system = system
+        vim.fn.delete(dir, "rf")
+    end)
+
+    it("reports spawn failures on the main loop without throwing", function()
+        vim.system = function()
+            error("cannot spawn")
+        end
+        local done, failure = false, nil
+        scan.scan_async(ctx(dir), function(_, err)
+            assert.is_false(vim.in_fast_event())
+            done, failure = true, err
+        end)
+        assert.is_false(done)
+        assert.is_true(vim.wait(1000, function()
+            return done
+        end, 5))
+        assert.is_truthy(failure:find("cannot spawn", 1, true))
+    end)
+
+    it("kills a cancelled process and ignores its eventual exit", function()
+        local exited, killed, called
+        vim.system = function(_, _, cb)
+            exited = cb
+            return {
+                kill = function(_, signal)
+                    killed = signal
+                end,
+            }
+        end
+        local cancel = scan.scan_project_paths_async(ctx(dir), function()
+            called = true
+        end)
+        cancel()
+        assert.are.equal(15, killed)
+        exited({ code = 0, stdout = dir .. "/project.md\n" })
+        vim.wait(20, function()
+            return false
+        end, 5)
+        assert.is_nil(called)
+    end)
+
+    it("matches synchronous project discovery and its no-match/error semantics", function()
+        write_file(dir, "project.md", "---\ntags:\n  - project\ndue: 2026-09-11\n---\n")
+        local expected = scan.scan_project_paths(ctx(dir))
+        local done = false
+        scan.scan_project_paths_async(ctx(dir), function(files, err)
+            assert.is_false(vim.in_fast_event())
+            assert.is_nil(err)
+            assert.are.same(expected, files)
+            done = true
+        end)
+        assert.is_true(vim.wait(5000, function()
+            return done
+        end, 5))
+    end)
+end)

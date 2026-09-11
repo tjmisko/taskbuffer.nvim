@@ -15,6 +15,7 @@
 local strftime = require("taskbuffer.strftime")
 
 local M = {}
+local async = require("taskbuffer.async")
 
 ---@class Task
 ---@field file_path   string
@@ -333,6 +334,7 @@ end
 function M.parse_tasks(raw_matches, ctx)
     local tasks = {}
     for _, m in ipairs(raw_matches) do
+        async.checkpoint()
         local task = M.parse_task(m, ctx)
         if task then
             tasks[#tasks + 1] = task

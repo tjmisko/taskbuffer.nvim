@@ -15,8 +15,10 @@
 -- de-duplication is handled by deduplicate_paths, not by rg).
 
 local uv = vim.uv or vim.loop
+local profile = require("taskbuffer.profile")
 
 local M = {}
+local async = require("taskbuffer.async")
 
 ---@class RawMatch
 ---@field path string         absolute file path (rg/grep print abs paths because we pass abs sources)
@@ -152,6 +154,7 @@ local function parse_output(stdout)
         return matches
     end
     for record in stdout:gmatch("[^\n]+") do
+        async.checkpoint()
         local nul = record:find("\0", 1, true)
         if nul then
             local path = record:sub(1, nul - 1)
@@ -190,6 +193,7 @@ local function classify_exit(code, stderr, stdout)
     end
     return nil, "scan command exited with code " .. tostring(code) .. ": " .. (stderr or "")
 end
+classify_exit = profile.wrap("scan.decode", classify_exit)
 
 -- Resolve the scan pattern from ctx, falling back to the default.
 local function ctx_pattern(ctx)
@@ -216,7 +220,9 @@ function M.scan(ctx)
         return {}, nil -- no rg invocation (scan.go:90-92)
     end
     local argv = build_scan_argv(ctx_pattern(ctx), paths)
+    local span = profile.begin("scan.process.sync")
     local res = vim.system(argv, { text = true }):wait()
+    profile.finish(span)
     return classify_exit(res.code, res.stderr, res.stdout)
 end
 
@@ -224,21 +230,51 @@ end
 --- vim.schedule with (matches, err). Buffered, not streaming (D3).
 ---@param ctx table|nil
 ---@param cb fun(matches:RawMatch[]|nil, err:string|nil)
+-- Both process execution and output decoding are cancellable. Spawn failures
+-- use the same asynchronous error callback as nonzero process exits.
+local function run_async(argv, decode, name, cb)
+    local cancelled, process, decode_cancel = false, nil, nil
+    local span = profile.begin(name)
+    local function on_exit(res)
+        profile.finish(span)
+        local queued = profile.begin("scan.schedule_delay")
+        decode_cancel = async.run(function()
+            profile.finish(queued)
+            return decode(res.code, res.stderr, res.stdout)
+        end, function(value, err)
+            if not cancelled then
+                cb(value, err)
+            end
+        end)
+        if cancelled then
+            decode_cancel()
+        end
+    end
+    local ok, result = pcall(vim.system, argv, { text = true }, on_exit)
+    if ok then
+        process = result
+    else
+        on_exit({ code = -1, stderr = tostring(result) })
+    end
+    return function()
+        cancelled = true
+        if decode_cancel then
+            decode_cancel()
+        end
+        if process then
+            pcall(process.kill, process, 15)
+        end
+    end
+end
+
 function M.scan_async(ctx, cb)
     local paths = M.expand_globs(ctx_sources(ctx))
     if #paths == 0 then
-        vim.schedule(function()
-            cb({}, nil)
-        end)
-        return
+        return async.run(function()
+            return {}
+        end, cb)
     end
-    local argv = build_scan_argv(ctx_pattern(ctx), paths)
-    vim.system(argv, { text = true }, function(res)
-        local matches, err = classify_exit(res.code, res.stderr, res.stdout)
-        vim.schedule(function()
-            cb(matches, err)
-        end)
-    end)
+    return run_async(build_scan_argv(ctx_pattern(ctx), paths), classify_exit, "scan.process.async", cb)
 end
 
 --- Find markdown files whose content contains a `- project` line (the project
@@ -250,27 +286,41 @@ end
 --- Only exit 1 -> empty; every other nonzero -> error (scan.go:170-176).
 ---@param ctx table|nil  reads ctx.sources
 ---@return string[]|nil files, string|nil err
+local function classify_projects(code, stderr, stdout)
+    if code == 1 then
+        return {}, nil
+    end
+    if code ~= 0 then
+        return nil, "project scan exited with code " .. tostring(code) .. ": " .. (stderr or "")
+    end
+    local files = {}
+    for line in (stdout or ""):gmatch("[^\n]+") do
+        async.checkpoint()
+        local file = vim.trim(line)
+        if file ~= "" then
+            files[#files + 1] = file
+        end
+    end
+    return files, nil
+end
+
 function M.scan_project_paths(ctx)
     local paths = M.expand_globs(ctx_sources(ctx))
     if #paths == 0 then
         return {}, nil
     end
-    local argv = build_project_argv(paths)
-    local res = vim.system(argv, { text = true }):wait()
-    if res.code == 1 then
-        return {}, nil -- no matches
+    local result = vim.system(build_project_argv(paths), { text = true }):wait()
+    return classify_projects(result.code, result.stderr, result.stdout)
+end
+
+function M.scan_project_paths_async(ctx, cb)
+    local paths = M.expand_globs(ctx_sources(ctx))
+    if #paths == 0 then
+        return async.run(function()
+            return {}
+        end, cb)
     end
-    if res.code ~= 0 then
-        return nil, "project scan exited with code " .. tostring(res.code) .. ": " .. (res.stderr or "")
-    end
-    local files = {}
-    for line in (res.stdout or ""):gmatch("[^\n]+") do
-        local f = vim.trim(line)
-        if f ~= "" then
-            files[#files + 1] = f
-        end
-    end
-    return files, nil
+    return run_async(build_project_argv(paths), classify_projects, "scan.projects.async", cb)
 end
 
 -- ---------------------------------------------------------------------------
@@ -324,5 +374,10 @@ function M.build_pattern(checkbox)
     end)
     return table.concat(parts, "|")
 end
+
+M.expand_globs = profile.wrap("scan.paths", M.expand_globs)
+M.scan = profile.wrap("scan.sync", M.scan)
+M.scan_async = profile.wrap("scan.async.dispatch", M.scan_async)
+M.scan_project_paths = profile.wrap("scan.projects.sync", M.scan_project_paths)
 
 return M

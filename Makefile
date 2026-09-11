@@ -1,4 +1,4 @@
-.PHONY: test test-lua test-e2e test-e2e-lazy test-e2e-vimplug \
+.PHONY: test test-lua bench helptags test-e2e test-e2e-lazy test-e2e-vimplug \
 	test-e2e-us-dates test-e2e-eu-dates test-e2e-custom-checkbox \
 	test-e2e-12h-time test-e2e-minimal-wrapper test-e2e-all lint clean
 
@@ -6,6 +6,12 @@ test: test-lua
 
 test-lua:
 	nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/"
+
+bench:
+	python3 scripts/benchmark.py $(BENCH_ARGS)
+
+helptags:
+	nvim --headless -u NONE -i NONE -c 'helptags doc' -c 'qa!'
 
 test-e2e:
 	docker build -t taskbuffer-e2e .

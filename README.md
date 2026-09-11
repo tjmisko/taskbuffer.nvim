@@ -240,6 +240,25 @@ Full example:
 | `:Tasks` | Open the taskfile buffer |
 | `:TasksClear` | Clear tag filters and refresh |
 | `:TasksUndated` | Open taskfile with undated tasks visible |
+| `:TasksProfile [start\|stop\|reset\|report]` | Record and inspect performance timings |
+
+## Performance debugging
+
+Run `:TasksProfile start`, reproduce a slow task operation, then run
+`:TasksProfile stop`. The report separates scans, parsing, frontmatter,
+formatting, buffer updates, and editor-wide scheduling delay. Recording is off
+by default and keeps a bounded sample history in memory.
+
+Setup installs lightweight lazy entry points. Opening tasks starts concurrent
+async scans; large results are processed in short batches. Unchanged sources and
+display-only changes reuse cached data. Hiding taskbuffer cancels pending work.
+Plugin managers generate help tags; use `make helptags` for development checkouts.
+
+For startup timing, set `vim.g.taskbuffer_profile = true` before setup and use
+Neovim's `--startuptime` to capture plugin loading. Developers can run `make bench`
+for isolated startup comparisons and generated task workloads. See the
+[performance guide](docs/performance.md) or `:help taskbuffer-performance` for
+instructions, interpretation, and Lua sampling profiles.
 
 ## Keybindings
 

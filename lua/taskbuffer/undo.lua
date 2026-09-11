@@ -97,8 +97,12 @@ function M.undo()
     table.remove(undo_stack)
     redo_stack[#redo_stack + 1] = entry
 
-    require("taskbuffer.buffer").refresh_and_restore_cursor()
-    flash_edits(entry.edits)
+    local buf = vim.api.nvim_get_current_buf()
+    require("taskbuffer.buffer").refresh_and_restore_cursor(function(err)
+        if not err and vim.api.nvim_get_current_buf() == buf then
+            flash_edits(entry.edits)
+        end
+    end)
     vim.notify("[taskbuffer] undid: " .. entry.op .. " (" .. task_count(#entry.edits) .. ")", vim.log.levels.INFO)
 end
 
@@ -134,8 +138,12 @@ function M.redo()
     table.remove(redo_stack)
     undo_stack[#undo_stack + 1] = entry
 
-    require("taskbuffer.buffer").refresh_and_restore_cursor()
-    flash_edits(entry.edits)
+    local buf = vim.api.nvim_get_current_buf()
+    require("taskbuffer.buffer").refresh_and_restore_cursor(function(err)
+        if not err and vim.api.nvim_get_current_buf() == buf then
+            flash_edits(entry.edits)
+        end
+    end)
     vim.notify("[taskbuffer] redid: " .. entry.op .. " (" .. task_count(#entry.edits) .. ")", vim.log.levels.INFO)
 end
 

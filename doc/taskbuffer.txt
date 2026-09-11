@@ -15,6 +15,7 @@ CONTENTS                                              *taskbuffer-contents*
   6. Keybindings ............................. |taskbuffer-keybindings|
   7. Task syntax ............................. |taskbuffer-syntax|
   8. Public API .............................. |taskbuffer-api|
+  9. Performance ............................. |taskbuffer-performance|
 
 ==============================================================================
 1. INTRODUCTION                                   *taskbuffer-introduction*
@@ -372,7 +373,8 @@ taskbuffer.setup({opts})
 
                                                      *taskbuffer.tasks()*
 taskbuffer.tasks()
-    Open the taskfile buffer. Called by |:Tasks|.
+    Open the taskfile buffer immediately and populate it asynchronously.
+    Called by |:Tasks|.
 
                                                 *taskbuffer.tasks_clear()*
 taskbuffer.tasks_clear()
@@ -385,6 +387,62 @@ taskbuffer.source_args()
                                             *taskbuffer.config_json_arg()*
 taskbuffer.config_json_arg()
     Returns the JSON-encoded config string.
+
+==============================================================================
+9. PERFORMANCE                                     *taskbuffer-performance*
+
+                                                        *:TasksProfile*
+:TasksProfile [start|stop|reset|report]
+    Record opt-in stage timings and editor-wide scheduling delay.
+    start:  Clear previous results and begin recording.
+    stop:   Stop recording and display results.
+    reset:  Clear results, preserving whether recording is active.
+    report: Display results (also the default with no argument).
+    Reports remain available through :messages or another report command.
+
+Example: >
+  :TasksProfile start
+  :Tasks
+  " Repeat a slow operation, switch away and back, or change filters.
+  :TasksProfile stop
+<
+To capture setup(), set this before loading/configuring taskbuffer: >lua
+  vim.g.taskbuffer_profile = true
+<
+With lazy.nvim, add "TasksProfile" to the plugin's cmd list so recording can
+start before the first :Tasks. Use |--startuptime| for module loading and full
+startup comparisons. Setup only installs lightweight lazy entry points. It does
+not scan/read task sources, generate help tags, or start a background timer.
+Plugin managers generate help tags; use `make helptags` for dev checkouts.
+
+Timings are inclusive wall-clock milliseconds; rows overlap and must not be
+summed. Count/total/mean/max cover the whole session. p95 uses the latest 256
+samples per stage. Disabled recording has no timer or sample collection.
+
+Task and project scans run concurrently. CPU processing yields between batches
+(target: about 4 ms); async.slice measures uninterrupted work, while
+render/parse/frontmatter/format timings include time spent yielded.
+event_loop.delay measures excess delay over a 20 ms polling interval across
+the editor, including other plugins and OS scheduling. It is not attribution
+to taskbuffer and may miss short stalls.
+
+Unchanged source metadata reuses parsed tasks; unchanged views reuse formatted
+text. Display-only changes and tag queries reuse the snapshot without scanning.
+Re-entry discovers external edits/new/deleted files. Source mutations force a
+new snapshot. Hidden buffers cancel pending work; stale results are discarded.
+Results update only their originating buffer and preserve cursors/views.
+
+Programmatic results: >lua
+  local profile = require("taskbuffer.profile")
+  vim.print(profile.snapshot())
+  print(profile.report())
+<
+For isolated startup and generated-vault benchmarks, run `make bench` from the
+repository root. Python 3, Neovim, and ripgrep are required. Custom workload: >
+  make bench BENCH_ARGS='--files 500 --tasks-per-file 20 --runs 20'
+<
+See docs/performance.md in the repository for benchmark interpretation,
+working performance budgets, and LuaJIT sampling profiles.
 
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:
