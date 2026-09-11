@@ -11,6 +11,9 @@ vim.fn.mkdir(config.sources[1], "p")
 vim.fn.writefile({ "- [ ] Fresh install task #example" }, config.sources[1] .. "/tasks.md")
 
 local function check()
+    vim.cmd("messages clear")
+    vim.v.warningmsg = ""
+    vim.v.errmsg = ""
     if mode == "native" then
         vim.opt.rtp:prepend(project)
         require("taskbuffer").setup(config)
@@ -42,6 +45,10 @@ local function check()
     local content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
     assert(content:find("Fresh install task", 1, true), "missing task")
     assert(type(vim.fn.maparg("gf", "n", false, true).callback) == "function", "missing navigation mapping")
+    assert(vim.bo.readonly and not vim.bo.modified and not vim.bo.swapfile, "unsafe generated buffer options")
+    assert(vim.v.warningmsg == "", vim.v.warningmsg)
+    assert(vim.v.errmsg == "", vim.v.errmsg)
+    assert(not vim.api.nvim_exec2("messages", { output = true }).output:match("W%d+:"), "warning opening taskbuffer")
     vim.cmd("TasksProfile report")
 end
 

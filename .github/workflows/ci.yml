@@ -40,6 +40,18 @@ jobs:
         run: git clone --depth 1 --branch stable https://github.com/folke/lazy.nvim .deps/lazy.nvim
       - name: Test installation
         run: make test-install
+      - name: Install pinned Obsidian renderer for interaction tests
+        if: matrix.os == 'ubuntu-latest' && matrix.neovim == 'stable'
+        uses: actions/checkout@v4
+        with:
+          repository: obsidian-nvim/obsidian.nvim
+          ref: 7a2b7caf41de196de66f27c1969d0d429810621a
+          path: .deps/obsidian.nvim
+      - name: Test real Obsidian checkbox rendering
+        if: matrix.os == 'ubuntu-latest' && matrix.neovim == 'stable'
+        env:
+          TASKBUFFER_TEST_OBSIDIAN: ${{ github.workspace }}/.deps/obsidian.nvim
+        run: python3 scripts/test-lua.py tests/interaction_spec.lua
 
   lua-check:
     runs-on: ubuntu-latest

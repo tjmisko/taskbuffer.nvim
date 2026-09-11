@@ -14,6 +14,9 @@ isolation, failed source writes, symlinks, and private generated output.
   loading, lazy.nvim setup, and command-triggered loading with temporary sources
   and isolated configuration.
 - Require green CI for Neovim 0.10.0 and stable on Linux and macOS, plus lint.
+- Require the editor interaction tests and the pinned Obsidian renderer check
+  to pass. See [testing coverage](testing.md) for the regression matrix and
+  historical negative controls.
 - Run `make bench BENCH_ARGS='--files 500 --tasks-per-file 20 --runs 20 --json /tmp/taskbuffer-release-bench.json'`.
   Inspect editor scheduling delay alongside completion time. Absolute startup
   timings depend heavily on machine load; compare versions in interleaved runs

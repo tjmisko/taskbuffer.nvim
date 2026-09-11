@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and keep filename prefixes when scanning a single file.
 - Add action safety and installation regressions, isolate the test runner from
   personal configuration, and cover Neovim 0.10.0/stable on Linux and macOS in CI.
+- Exercise actual keypresses, native undo, source editing, and warning-free
+  taskfile refreshes in separate editors. Check change-event delivery and run a
+  pinned Obsidian renderer integration in CI to detect stale checkbox displays.
 
 
 ### Migrated from Go to pure Lua
