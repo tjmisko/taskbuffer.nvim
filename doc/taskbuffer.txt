@@ -30,10 +30,11 @@ bucketed by date interval (Overdue, Today, Tomorrow, This Week, etc.).
 2. REQUIREMENTS                                   *taskbuffer-requirements*
 
 - Neovim >= 0.10
+- Linux or macOS with the standard cp utility (Windows is unvalidated)
 - ripgrep (`rg`) on PATH
 - Optional: telescope.nvim (for tag filtering)
 
-The plugin is pure Lua; there is no build step or external binary.
+The plugin is pure Lua; there is no build step or separate taskbuffer executable.
 
 ==============================================================================
 3. INSTALLATION                                   *taskbuffer-installation*
@@ -279,6 +280,8 @@ Run `:checkhealth taskbuffer` to verify your setup. Checks:
 
                                                                    *:Tasks*
 Source edits:
+    Linux/macOS source writes use the standard cp utility to preserve file
+    permissions, ACLs, and extended attributes in staged replacements.
     Completion, timers, taskfile date edits, and frontmatter date fallback refuse
     to overwrite a source buffer with unsaved changes. Save that buffer first.
     Inline Markdown date edits remain in the buffer and use normal Neovim undo.

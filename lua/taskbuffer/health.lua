@@ -25,6 +25,12 @@ function M.check()
         })
     end
 
+    if vim.fn.executable("cp") == 1 then
+        vim.health.ok("cp found (source metadata preservation)")
+    else
+        vim.health.error("cp is required to preserve metadata when editing source files")
+    end
+
     -- 4. Source directories
     for _, src in ipairs(config.sources) do
         if vim.fn.isdirectory(src) == 1 then

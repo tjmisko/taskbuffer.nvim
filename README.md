@@ -15,6 +15,7 @@ A simple Neovim plugin for managing tasks defined in plain text. Tasks are store
 ## Requirements
 
 - **Neovim >= 0.10**
+- Linux or macOS with the standard `cp` utility (Windows is unvalidated)
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH
 - Optional: [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (for tag filtering)
 
@@ -205,7 +206,7 @@ in private session directories beneath `tmpdir` and are removed on normal exit.
 
 Run `:checkhealth taskbuffer` to verify your setup. The health check validates:
 - Neovim version (>= 0.10)
-- ripgrep is available
+- ripgrep and the system `cp` utility are available
 - Source directories exist
 - telescope.nvim availability (optional)
 

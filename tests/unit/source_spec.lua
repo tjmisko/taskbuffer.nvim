@@ -37,6 +37,47 @@ describe("source write safety", function()
         assert.are.same({ path }, vim.fn.glob(dir .. "/*", true, true))
     end)
 
+    it("does not leave old bytes when replacing a source with shorter content", function()
+        assert.is_true(source.write(path, "x\n"))
+        assert.are.equal("x\n", read())
+    end)
+
+    it("leaves the source intact if metadata copying fails", function()
+        local original = vim.system
+        vim.system = function()
+            return {
+                wait = function()
+                    return { code = 1, stderr = "metadata copy failed" }
+                end,
+            }
+        end
+        local succeeded, ok, err = pcall(source.write, path, "replacement\n")
+        vim.system = original
+        assert.is_true(succeeded)
+        assert.is_false(ok)
+        assert.is_truthy(err:find("metadata", 1, true))
+        assert.are.equal("original\n", read())
+    end)
+
+    it("preserves extended attributes on the replaced file", function()
+        local set = vim.system({
+            "python3",
+            "-c",
+            "import os,sys; os.setxattr(sys.argv[1], 'user.taskbuffer-test', b'kept')",
+            path,
+        }, { text = true }):wait()
+        assert.are.equal(0, set.code, set.stderr)
+        assert.is_true(source.write(path, "replacement\n"))
+        local get = vim.system({
+            "python3",
+            "-c",
+            "import os,sys; print(os.getxattr(sys.argv[1], 'user.taskbuffer-test').decode())",
+            path,
+        }, { text = true }):wait()
+        assert.are.equal(0, get.code, get.stderr)
+        assert.are.equal("kept\n", get.stdout)
+    end)
+
     it("preserves permissions when replacing a source", function()
         assert(vim.uv.fs_chmod(path, 416)) -- 0640
         assert.is_true(source.write(path, "replacement\n"))

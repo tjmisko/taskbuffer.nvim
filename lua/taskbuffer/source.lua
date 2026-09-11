@@ -87,15 +87,25 @@ function M.write(path, data)
         return false, reason
     end
     if stat then
-        ok, err = uv.fs_fchmod(fd, stat.mode % 512)
-        if not ok then
-            return fail(err)
+        -- libuv has no portable ACL/xattr API. The platform copy utility keeps
+        -- those attributes on the staged file before its contents are changed.
+        -- This runs only for an explicit source edit, never setup or scanning.
+        local flag = uv.os_uname().sysname == "Linux" and "--preserve=mode,ownership,timestamps,xattr" or "-p"
+        local spawned, copy = pcall(function()
+            return vim.system({ "cp", flag, target, temporary }, { text = true }):wait()
+        end)
+        if not spawned or copy.code ~= 0 then
+            return fail("cannot preserve source metadata: " .. (spawned and copy.stderr or tostring(copy)))
         end
     end
     local written
     written, err = uv.fs_write(fd, data, 0)
     if written ~= #data then
         return fail(err or "incomplete source write: " .. path)
+    end
+    ok, err = uv.fs_ftruncate(fd, #data)
+    if not ok then
+        return fail(err)
     end
     ok, err = uv.fs_close(fd)
     fd = nil

@@ -14,7 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add opt-in `:TasksProfile` instrumentation and an isolated benchmark harness.
 - Protect unsaved source buffers from disk mutations; refresh clean loaded
   buffers after successful edits. Stage source writes before replacement so
-  failed writes do not truncate the original; preserve permissions and symlinks.
+  failed writes do not truncate the original; preserve permissions, extended
+  attributes, ACLs, and symlinks using the platform copy utility.
 - Route global actions in taskbuffer to the source task, reject stale task
   locations, and ignore headings. Escape source filenames when navigating.
 - Start timers through the action API, creating state directories on demand.
@@ -34,7 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 taskbuffer's task engine was originally a Go binary that the plugin shelled out
 to. As of this release the engine is reimplemented entirely in Lua and runs
 in-process — there is **no build step and no external binary**. `rg` (ripgrep)
-remains the only external dependency, with a `grep` fallback.
+provides discovery, with a `grep` fallback. Source edits use the standard system
+`cp` utility to preserve file metadata.
 
 The Lua pipeline was verified byte-for-byte against the Go binary (list output
 and mutations) before the switch, and is as fast or faster on large vaults

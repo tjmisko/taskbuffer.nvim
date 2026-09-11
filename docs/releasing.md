@@ -25,7 +25,7 @@ isolation, failed source writes, symlinks, and private generated output.
 
 ## Audit evidence
 
-On the local Neovim 0.12.4 installation, 433 tests passed with no failures/errors;
+On the local Neovim 0.12.4 installation, 436 tests passed with no failures/errors;
 StyLua, Selene, help-tag generation, and all three installation modes passed.
 A live Telescope smoke test opened the picker, listed tags, selected a tag, and
 refreshed the source taskbuffer successfully. The 10,000-task benchmark measured
@@ -43,7 +43,8 @@ Source mutations require saved source buffers and writable source directories.
 Writes use a temporary sibling file and rename it into place after writing and
 closing successfully. Symlinks are preserved; files with multiple hard links are
 refused rather than silently breaking the link relationship. File permission
-bits are preserved; extended attributes and custom ACLs are not copied.
+bits, extended attributes, and ACLs are copied with the platform `cp` utility
+before replacing the staged contents. A copy failure leaves the original intact.
 
 Bulk actions and timer transitions can touch several files. They are not
 transactions across files, and concurrent external writers are not locked out.
