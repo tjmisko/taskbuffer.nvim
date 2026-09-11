@@ -193,6 +193,15 @@ function M.release(buf)
     published[buf] = nil
 end
 
+-- This is a generated view. Neovim must not treat our async output writes as
+-- external edits to a regular file or create swap files for disposable output.
+function M.prepare(buf)
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "hide"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].readonly = true
+end
+
 -- Synchronous compatibility API for scripts only.
 function M.refresh_taskfile()
     local text, err = require("taskbuffer.list").list(list_opts(false))
@@ -312,7 +321,7 @@ function M.tasks()
     if vim.api.nvim_buf_get_name(0) ~= path then
         vim.cmd("edit " .. vim.fn.fnameescape(path))
     end
-    vim.bo.readonly = true
+    M.prepare(vim.api.nvim_get_current_buf())
     if vim.bo.filetype ~= "taskfile" then
         vim.bo.filetype = "taskfile"
     end

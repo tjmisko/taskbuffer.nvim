@@ -28,8 +28,9 @@ function M.register()
         group = augroup,
         pattern = "*taskfile",
         callback = function(event)
-            vim.bo[event.buf].readonly = true
-            require("taskbuffer.buffer").refresh_taskfile_async(nil, { buf = event.buf })
+            local buffer = require("taskbuffer.buffer")
+            buffer.prepare(event.buf)
+            buffer.refresh_taskfile_async(nil, { buf = event.buf })
         end,
     })
     vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, {
