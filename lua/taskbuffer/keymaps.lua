@@ -311,8 +311,10 @@ local function set_date_today_in_markdown()
     local line = vim.api.nvim_get_current_line()
     local new_line, new_date = util.set_date_today_in_string(line)
     if new_line then
-        vim.api.nvim_set_current_line(new_line)
-        vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+        local path, lnum = get_task_location_from_current_buffer()
+        if util.replace_line_in_file(path, lnum, new_line) then
+            vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+        end
         return
     end
 
@@ -339,8 +341,10 @@ local function shift_task_date_in_markdown(days)
     local line = vim.api.nvim_get_current_line()
     local new_line, new_date = util.shift_date_in_string(line, days)
     if new_line then
-        vim.api.nvim_set_current_line(new_line)
-        vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+        local path, lnum = get_task_location_from_current_buffer()
+        if util.replace_line_in_file(path, lnum, new_line) then
+            vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
+        end
         return
     end
 
@@ -369,7 +373,17 @@ function M.global_action(verb)
         filepath, linenumber = get_task_location_from_current_buffer()
     end
     if filepath and linenumber then
-        util.run_task_cmd({ verb, filepath, tostring(linenumber) }, in_taskfile)
+        local args = { verb, filepath, tostring(linenumber) }
+        if in_taskfile then
+            util.run_task_cmd(args, true)
+        else
+            local ok, err = require("taskbuffer.source").edit_buffer(0, function()
+                return util.run_task_cmd(args, false)
+            end)
+            if not ok and err then
+                vim.notify("[taskbuffer] " .. tostring(err), vim.log.levels.WARN)
+            end
+        end
     end
 end
 
@@ -523,24 +537,30 @@ function M.attach_taskfile()
 end
 
 function M.markdown_action(action)
-    if action == "set_date_today" then
-        set_date_today_in_markdown()
-    else
-        shift_task_date_in_markdown(action == "shift_date_back" and -vim.v.count1 or vim.v.count1)
+    local ok, err = require("taskbuffer.source").edit_buffer(0, function()
+        if action == "set_date_today" then
+            set_date_today_in_markdown()
+        else
+            shift_task_date_in_markdown(action == "shift_date_back" and -vim.v.count1 or vim.v.count1)
+        end
+        return true
+    end)
+    if not ok and err then
+        vim.notify("[taskbuffer] " .. tostring(err), vim.log.levels.WARN)
     end
 end
 
 function M.attach_markdown()
     map("n", "markdown", "set_date_today", function()
-        set_date_today_in_markdown()
+        M.markdown_action("set_date_today")
     end, { buffer = true, desc = "Set task date to today" })
 
     map("n", "markdown", "shift_date_back", function()
-        shift_task_date_in_markdown(-vim.v.count1)
+        M.markdown_action("shift_date_back")
     end, { buffer = true, desc = "Shift task date back" })
 
     map("n", "markdown", "shift_date_forward", function()
-        shift_task_date_in_markdown(vim.v.count1)
+        M.markdown_action("shift_date_forward")
     end, { buffer = true, desc = "Shift task date forward" })
 end
 

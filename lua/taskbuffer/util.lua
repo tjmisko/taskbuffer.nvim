@@ -10,12 +10,7 @@ function M.parse_taskfile_line(line)
 end
 
 local function read_lines(path)
-    local file = io.open(path, "rb")
-    if not file then
-        return nil
-    end
-    local data = file:read("*a")
-    file:close()
+    local data = require("taskbuffer.source").read(path)
     return data and vim.split(data, "\n", { plain = true })
 end
 

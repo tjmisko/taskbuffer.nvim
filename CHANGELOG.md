@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   only when discovering tasks. Run concurrent scans and process large results in
   cancellable slices, reusing unchanged source snapshots and formatted views.
 - Add opt-in `:TasksProfile` instrumentation and an isolated benchmark harness.
+- Edit the current source buffer directly for task and date shortcuts, including
+  unsaved tasks. Apply checkbox and marker changes in one native undo step,
+  preserve unrelated edits, and let Markdown renderers see normal change events.
 - Protect unsaved source buffers from disk mutations; refresh clean loaded
   buffers after successful edits. Stage source writes before replacement so
   failed writes do not truncate the original; preserve permissions, extended

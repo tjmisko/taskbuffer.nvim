@@ -314,6 +314,14 @@ Global (all filetypes) ~
   `<leader>tu`        Undo irrelevant
   `<leader>ev`        Insert a dated note entry
 
+In a Markdown/source buffer, task and date shortcuts edit the current buffer,
+including unsaved changes. Each task action is one normal undo step; use `u` and
+`<C-r>` to undo/redo, and `:write` to save. `<leader>ti` changes `- [ ]` to `- [-]`
+and adds the `::irrelevant` marker together. The task list reads saved files.
+
+In the taskfile view, actions write to source files. Save any unsaved source
+buffer first so the task list's line numbers remain safe to use.
+
 Taskfile buffer ~
 
   Key               Action ~

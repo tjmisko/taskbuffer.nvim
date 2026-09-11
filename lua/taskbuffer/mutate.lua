@@ -1,7 +1,7 @@
 -- mutate.lua — file-line mutation primitives (port of go/mutate.go).
 --
--- These operate on file bytes. The source module refuses writes to modified
--- buffers, stages replacements, and refreshes clean loaded buffers after edits.
+-- These operate on source bytes. The source module routes explicit buffer edits
+-- to memory and protects modified buffers from writes through disk snapshots.
 -- Output matches the original engine except for corrected CRLF marker placement.
 --
 -- Newline fidelity (overview D10): we mirror Go's strings.Split("\n") /
@@ -26,13 +26,7 @@ end
 -- Read the whole file as bytes. Returns nil on any open failure (caller
 -- distinguishes "missing -> create" from "missing -> error").
 local function read_file(path)
-    local f = io.open(path, "rb")
-    if not f then
-        return nil
-    end
-    local data = f:read("*a") or ""
-    f:close()
-    return data
+    return require("taskbuffer.source").read(path)
 end
 
 -- Read file and split into lines exactly like Go's strings.Split(data, "\n").

@@ -39,9 +39,12 @@ release-asset domain policy. Windows has not been validated.
 
 ## Operational limits
 
-Source mutations require saved source buffers and writable source directories.
-Writes use a temporary sibling file and rename it into place after writing and
-closing successfully. Symlinks are preserved; files with multiple hard links are
+Shortcuts in a source buffer edit its current contents, preserve unsaved edits,
+and use native undo. The user saves these changes normally. Actions from the
+generated taskfile use disk snapshots and require saved source buffers and
+writable source directories. These writes use a temporary sibling file and rename
+it into place after writing and closing successfully. Symlinks are preserved;
+files with multiple hard links are
 refused rather than silently breaking the link relationship. File permission
 bits, extended attributes, and ACLs are copied with the platform `cp` utility
 before replacing the staged contents. A copy failure leaves the original intact.

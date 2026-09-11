@@ -12,9 +12,8 @@
 -- seconds) — mirrors how Go threads `now time.Time` explicitly. Defaults to
 -- os.time().
 --
--- Buffer awareness (overview D9) is deliberately NOT here: these verbs are pure
--- file ops so their output stays byte-comparable to the Go binary. The
--- integration/keymaps layer owns the open-buffer safety concern.
+-- The integration layer selects the source buffer or disk. All reads and
+-- mutations use that same source, including multi-step checkbox/marker actions.
 --
 -- `ctx` is the table produced by context.build_context (which starts from
 -- parse.new_parse_context). Fields read here:
@@ -53,11 +52,10 @@ end
 -- read never influences the output bytes. Returns the line text, or nil if the
 -- file cannot be read / the line is out of range.
 local function read_line(path, lnum)
-    local ok, lines = pcall(vim.fn.readfile, path)
-    if not ok or type(lines) ~= "table" then
-        return nil
-    end
-    return lines[lnum]
+    local data = require("taskbuffer.source").read(path)
+    local lines = data and vim.split(data, "\n", { plain = true })
+    local line = lines and lines[lnum]
+    return line and (line:gsub("\r$", ""))
 end
 
 local function validate_running(ct, ctx)

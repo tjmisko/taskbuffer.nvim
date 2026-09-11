@@ -1,9 +1,79 @@
 -- On-demand source-file safety shared by actions, date edits, and undo.
 local M = {}
 local uv = vim.uv
+local editing
 
 local function canonical(path)
     return uv.fs_realpath(path) or vim.fn.fnamemodify(path, ":p")
+end
+
+local function editing_path(path)
+    return editing and (path == editing.path or canonical(path) == canonical(editing.path))
+end
+
+-- Only an explicitly selected source buffer supplies unsaved contents. Actions
+-- from the aggregate view still use disk snapshots and reject dirty sources.
+function M.read(path)
+    if editing_path(path) then
+        return editing.data
+    end
+    local file = io.open(path, "rb")
+    if not file then
+        return nil
+    end
+    local data = file:read("*a") or ""
+    file:close()
+    return data
+end
+
+-- Run synchronous source mutations against an in-memory snapshot, then publish
+-- once. Checkbox + marker changes form one native undo entry and emit normal
+-- buffer-change events; unrelated edits, file options, and disk bytes stay put.
+function M.edit_buffer(buf, callback)
+    if editing then
+        return false, "a source buffer edit is already in progress"
+    end
+    if buf == 0 then
+        buf = vim.api.nvim_get_current_buf()
+    end
+    if not vim.bo[buf].modifiable or vim.bo[buf].readonly then
+        return false, "source buffer is not editable"
+    end
+    local before = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local tick = vim.api.nvim_buf_get_changedtick(buf)
+    local snapshot = {
+        path = vim.api.nvim_buf_get_name(buf),
+        data = table.concat(before, "\n") .. (vim.bo[buf].endofline and "\n" or ""),
+    }
+    editing = snapshot
+    local called, ok, err = pcall(callback)
+    editing = nil
+    if not called then
+        return false, ok
+    end
+    if not ok then
+        return false, err
+    end
+    if not vim.api.nvim_buf_is_valid(buf) or vim.api.nvim_buf_get_changedtick(buf) ~= tick then
+        return false, "source buffer changed during the task action"
+    end
+    local after = vim.split(snapshot.data, "\n", { plain = true })
+    if #after > 1 and after[#after] == "" then
+        table.remove(after)
+    end
+    -- Replace only the changed lines so marks on surrounding text survive.
+    local first, last_before, last_after = 1, #before, #after
+    while first <= last_before and first <= last_after and before[first] == after[first] do
+        first = first + 1
+    end
+    while last_before >= first and last_after >= first and before[last_before] == after[last_after] do
+        last_before = last_before - 1
+        last_after = last_after - 1
+    end
+    if first <= last_before or first <= last_after then
+        vim.api.nvim_buf_set_lines(buf, first - 1, last_before, false, vim.list_slice(after, first, last_after))
+    end
+    return true
 end
 
 local function buffers(path)
@@ -21,6 +91,9 @@ local function buffers(path)
 end
 
 function M.check(path)
+    if editing_path(path) then
+        return true
+    end
     for _, buf in ipairs(buffers(path)) do
         if vim.bo[buf].modified then
             return false, "save unsaved source edits first: " .. path
@@ -63,6 +136,10 @@ end
 -- Stage beside the destination and rename only after a successful write/close.
 -- Preserve permissions and resolve symlinks so editing a link keeps the link.
 function M.write(path, data)
+    if editing_path(path) then
+        editing.data = data
+        return true
+    end
     local ok, err = M.check(path)
     if not ok then
         return false, err
