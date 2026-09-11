@@ -60,20 +60,26 @@ describe("source write safety", function()
     end)
 
     it("preserves extended attributes on the replaced file", function()
-        local set = vim.system({
+        local set_args = {
             "python3",
             "-c",
             "import os,sys; os.setxattr(sys.argv[1], 'user.taskbuffer-test', b'kept')",
             path,
-        }, { text = true }):wait()
-        assert.are.equal(0, set.code, set.stderr)
-        assert.is_true(source.write(path, "replacement\n"))
-        local get = vim.system({
+        }
+        local get_args = {
             "python3",
             "-c",
             "import os,sys; print(os.getxattr(sys.argv[1], 'user.taskbuffer-test').decode())",
             path,
-        }, { text = true }):wait()
+        }
+        if vim.uv.os_uname().sysname == "Darwin" then
+            set_args = { "xattr", "-w", "user.taskbuffer-test", "kept", path }
+            get_args = { "xattr", "-p", "user.taskbuffer-test", path }
+        end
+        local set = vim.system(set_args, { text = true }):wait()
+        assert.are.equal(0, set.code, set.stderr)
+        assert.is_true(source.write(path, "replacement\n"))
+        local get = vim.system(get_args, { text = true }):wait()
         assert.are.equal(0, get.code, get.stderr)
         assert.are.equal("kept\n", get.stdout)
     end)
