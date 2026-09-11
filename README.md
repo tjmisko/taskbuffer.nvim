@@ -1,345 +1,182 @@
 # taskbuffer.nvim
 
-A simple Neovim plugin for managing tasks defined in plain text. Tasks are stored on single lines of plain text, formatted your way, stored *in situ*, and centralized in a transient task buffer. Aggregate tasks across your projects, filter by tags, and pass straight through to the source files.
+[![CI](https://github.com/tjmisko/taskbuffer.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/tjmisko/taskbuffer.nvim/actions/workflows/ci.yml)
 
-## Features
-- Scans markdown files with [ripgrep](https://github.com/BurntSushi/ripgrep) for fast, recursive task discovery
-- Displays tasks in a read-only **taskfile** buffer, bucketed by configurable time horizon (Overdue, Today, Tomorrow, This Week, etc.)
-- Filter tasks by tag via [Telescope](https://github.com/nvim-telescope/telescope.nvim) picker. Support for other pickers forthcoming.
-- Shift task due dates with `<M-Left>` / `<M-Right>` in both taskfile and markdown buffers
-- Jump from taskfile line to source file location with `gf`
-- Fully configurable: sources, keybindings, inbox location, task format
-- Start/stop/complete task timer with `::start`, `::stop`, `::complete` markers written to source files
-- Defer, mark irrelevant — all operations modify source files directly
+Keep tasks in your Markdown files. Use Neovim to see and manage them together.
+
+```markdown
+- [ ] Review the API proposal #work (@[[2026-09-14]])
+- [ ] Replace the bike chain <30m> #home
+```
+
+`:Tasks` gathers tasks into a readonly buffer, grouped by due date. Jump to the
+original note, complete a task, change its due date, or filter the list by tag.
+Taskbuffer also reads tags and due dates from YAML frontmatter.
+
+[Installation](#installation) · [Usage](#usage) · [Configuration](#configuration) · [Help](#help-and-contributing)
 
 ## Requirements
 
-- **Neovim >= 0.10**
-- Linux or macOS with the standard `cp` utility (Windows is unvalidated)
-- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH
-- Optional: [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (for tag filtering)
+- Neovim **0.10 or newer**.
+- Linux or macOS, with the standard `cp` utility. Windows is not tested.
+- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) for task discovery.
+- Optional: [Telescope](https://github.com/nvim-telescope/telescope.nvim#installation)
+  for the tag picker.
 
-No build step or separate taskbuffer executable is required. The plugin is pure Lua;
-ripgrep performs file discovery.
+Taskbuffer is written in Lua and requires no build step. It works with Markdown
+files independently of Obsidian.
 
 ## Installation
 
-### lazy.nvim
+With [lazy.nvim](https://lazy.folke.io/spec), add this plugin spec:
 
 ```lua
 {
     "tjmisko/taskbuffer.nvim",
-    config = function()
-        require("taskbuffer").setup({
-            -- your overrides here
-        })
-    end,
+    lazy = false,
+    opts = {
+        sources = { "~/notes" }, -- Change this to your notes directory.
+    },
 }
 ```
 
-### packer.nvim
+`lazy = false` makes commands and source-editing shortcuts available immediately.
+Setup registers entry points; it does not scan your files. Scanning starts when
+you open taskbuffer. Define `vim.g.mapleader` before configuring the plugin.
+
+With another plugin manager, install `tjmisko/taskbuffer.nvim` and call:
 
 ```lua
-use {
-    "tjmisko/taskbuffer.nvim",
-    config = function()
-        require("taskbuffer").setup()
-    end,
-}
+require("taskbuffer").setup({ sources = { "~/notes" } })
 ```
+
+Run `:checkhealth taskbuffer` to check your installation and source paths.
+
+## Usage
+
+1. Add a task such as `- [ ] Try taskbuffer #work` to a Markdown file under one
+   of your configured sources, then save it.
+2. Run `:Tasks`. Undated tasks appear under **Someday** by default.
+3. Move to a task and press `<Enter>` or `gf` to open its source. Press
+   `<leader>tx` to check it off, or `#` in taskbuffer to filter by tag.
+
+The default due-date syntax is `(@[[YYYY-MM-DD]])`, with an optional time:
+
+```markdown
+- [ ] Send the draft <45m> #work (@[[2026-09-14]] 16:00)
+```
+
+Here `<45m>` is an estimated duration. Dates, durations, and tags are optional.
+Checkboxes represent open (`- [ ]`), complete (`- [x]`), or irrelevant (`- [-]`)
+tasks. Completion, deferral, and timer actions add timestamped `::` markers to
+the task line. See `:help taskbuffer-syntax` for the full format.
+
+### Editing and saving
+
+**In a Markdown buffer**, shortcuts edit the current buffer, including unsaved
+text. Each task action is one normal undo step. Use `u` / `<C-r>` to undo or redo,
+and `:write` to save.
+
+**In taskbuffer**, actions update the source file on disk. Save any unsaved
+changes to that source before acting from the task list. Run `:Tasks` to pick up
+saved or external changes; taskbuffer rejects stale source locations.
+
+### Keybindings
+
+On a task in a Markdown file or in taskbuffer:
+
+| Key | Action |
+| --- | --- |
+| `<leader>tx` | Check off without adding a timestamp |
+| `<leader>tc` | Complete and add a timestamp |
+| `<leader>td` | Record a deferral |
+| `<leader>ti` | Mark irrelevant and add a timestamp |
+| `<leader>tu` | Remove the irrelevant marking |
+| `<M-Left>` / `<M-Right>` | Move the due date earlier / later; accepts a count |
+| `<C-T>` | Set the due date to today |
+
+In taskbuffer:
+
+| Key | Action |
+| --- | --- |
+| `<Enter>` / `gf` | Open the task's source |
+| `#` | Filter by tag with Telescope |
+| `<leader>tt` | Reset filters |
+| `<leader>ts` | Toggle undated tasks |
+| `<leader>tj` | Toggle timestamp markers |
+| `<leader>tb` | Start timing the selected task |
+| `u` / `<C-r>` | Undo / redo a date change |
+
+Date changes also work on a visual selection in taskbuffer. The global
+`<leader>ev` mapping inserts a dated note entry. All mappings can be changed or
+disabled; see `:help taskbuffer-keybindings` for the complete list.
+
+### Commands
+
+| Command | Action |
+| --- | --- |
+| `:Tasks` | Open or refresh the task list and clear tag filters |
+| `:TasksClear` | Clear the tag filter on the current list |
+| `:TasksUndated` | Open the list with undated tasks visible |
+| `:TasksProfile [start\|stop\|reset\|report]` | Record or inspect performance timings |
 
 ## Configuration
 
-All options with their defaults — see `:help taskbuffer-configuration` for full details:
+Pass only the options you want to change in `opts` or `setup()`. Sources can be
+directories, individual files, or glob patterns. For example:
 
 ```lua
-require("taskbuffer").setup({
-    -- State directory for current task tracking
-    state_dir = "~/.local/state/task",
-
-    -- Temp directory for taskfile output
-    tmpdir = "/tmp",
-
-    -- Whether to show undated tasks by default
+opts = {
+    sources = { "~/notes", "~/projects/**/tasks.md" },
     show_undated = true,
-
-    -- Task sources: directories (recursive) or glob patterns
-    sources = { "~/Notes" },
-
-    -- Default location for new tasks
-    inbox = {
-        file = "~/Notes/inbox.md",
-        header = nil,  -- e.g. "## Tasks" to insert below a heading
-    },
-
-    -- Time horizons: how tasks are bucketed by due date (nil = built-in defaults)
-    -- See "Horizons" section below for details
-    horizons = nil,
-    horizons_overlap = "sorted",   -- "sorted", "first_match", or "narrowest"
-    week_start = "monday",         -- first day of the week
-
-    -- Frontmatter configuration
-    frontmatter = {
-        due_key = "due",         -- YAML key for the due date field
-        inherit_due = true,      -- undated tasks inherit the file's frontmatter due date
-        require_tags = {},       -- only inherit due if file has these frontmatter tags
-        status = {
-            key = "status",              -- YAML key for status field
-            done_values = { "done", "complete" },  -- values that mark a file as complete
-        },
-    },
-
-    -- Task syntax formats
-    formats = {
-        date = "%Y-%m-%d",
-        time = "%H:%M",
-        duration = "<{n}m>",
-        tag_prefix = "#",
-        checkbox = { open = "- [ ]", done = "- [x]", irrelevant = "- [-]" },
-        date_wrapper = { "(@[[", "]]", ")" },
-        marker_prefix = "::",
-    },
-
-    -- Keymaps: set any to false to disable
     keymaps = {
         global = {
-            complete        = "<leader>tc",
-            defer           = "<leader>td",
-            check_off       = "<leader>tx",
-            irrelevant      = "<leader>ti",
-            undo_irrelevant = "<leader>tu",
-            note            = "<leader>ev",
-        },
-        taskfile = {
-            start_task         = "<leader>tb",
-            go_to_file         = "gf",
-            irrelevant         = "<leader>ti",
-            undo_irrelevant    = "<leader>tu",
-            filter_tags        = "#",
-            reset_filters      = "<leader>tt",
-            toggle_markers     = "<leader>tj",
-            toggle_undated     = "<leader>ts",
-            shift_date_back    = "<M-Left>",
-            shift_date_forward = "<M-Right>",
-            set_date_today     = "<C-T>",
-            quickfix           = "<M-C-q>",
-            undo               = true,
-            redo               = true,
-        },
-        markdown = {
-            shift_date_back    = "<M-Left>",
-            shift_date_forward = "<M-Right>",
-            set_date_today     = "<C-T>",
+            complete = "<leader>tC",
+            note = false, -- Disable the dated-note shortcut.
         },
     },
-})
+}
 ```
 
-To disable a keymap, set it to `false`:
+The [full reference](doc/taskbuffer.txt) is also available inside Neovim:
 
-```lua
-require("taskbuffer").setup({
-    keymaps = {
-        global = {
-            note = false,  -- don't register the note keymap
-        },
-    },
-})
-```
+| Topic | Help |
+| --- | --- |
+| All options and defaults | `:help taskbuffer-configuration` |
+| Due-date groups | `:help taskbuffer-horizons` |
+| Frontmatter tags, dates, and status | `:help taskbuffer-frontmatter` |
+| Date, time, and checkbox formats | `:help taskbuffer-formats` |
 
-### Horizons
+## Performance
 
-Horizons control how tasks are bucketed by due date in the taskfile buffer. When `horizons` is `nil` (the default), the built-in horizons are used: Overdue, Today, Tomorrow, This Week, This Month, This Year, Far Off, and Someday (undated).
+Task scans run asynchronously. Taskbuffer reuses cached results for filtering
+and cancels pending work when its buffer is hidden. Profiling is off by default.
 
-Each horizon is a table with:
+To investigate a slowdown, run `:TasksProfile start`, reproduce it, then run
+`:TasksProfile stop`. See the [performance guide](docs/performance.md) for startup
+measurements, benchmarks, and interpreting the report.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `label` | `string` | Heading text, e.g. `"# Today"` |
-| `after` | `number\|string` | Cutoff: integer day offset (`0` = today), duration string (`"2d"`, `"1w"`, `"1m"`, `"1y"`), or calendar keyword (`"past"`, `"yesterday"`, `"end_of_week"`, `"end_of_month"`, `"end_of_quarter"`, `"end_of_year"`) |
-| `undated` | `boolean` | If `true`, this bucket collects undated tasks |
-| `order` | `number\|nil` | Explicit display order (overrides default chronological ordering) |
+## Help and contributing
 
-Example custom horizons:
+Start with `:help taskbuffer` and `:checkhealth taskbuffer`. If a task is missing,
+check that its file is saved under a configured source and that filters are
+cleared with `:Tasks`.
 
-```lua
-require("taskbuffer").setup({
-    horizons = {
-        { label = "# Overdue", after = "past" },
-        { label = "# Today",   after = 0 },
-        { label = "# Soon",    after = "1w" },
-        { label = "# Backlog", undated = true },
-    },
-    horizons_overlap = "sorted",  -- how tasks in multiple horizons are handled
-    week_start = "monday",
-})
-```
+[Report a bug](https://github.com/tjmisko/taskbuffer.nvim/issues) with your Neovim
+version, plugin commit, relevant configuration, and a small example that
+reproduces the problem. Use sample tasks you can share publicly.
 
-`horizons_overlap` controls what happens when a task falls into multiple horizons:
-- `"sorted"` (default): task appears in all matching horizons, sorted by date
-- `"first_match"`: task appears only in the first matching horizon
-- `"narrowest"`: task appears only in the narrowest matching horizon
+For development checks and regression coverage, see the
+[testing guide](docs/testing.md). Changes are recorded in the
+[changelog](CHANGELOG.md).
 
-### Frontmatter
+## Project history
 
-taskbuffer reads YAML frontmatter from markdown files to enrich tasks:
-
-- **Tag inheritance**: Tags from the frontmatter `tags` field are merged with inline `#tags` on each task.
-- **Due date inheritance**: When `inherit_due` is enabled (the default), undated tasks inherit the file's frontmatter due date. This is useful for project notes where all tasks share a deadline.
-- **Status filtering**: Files whose frontmatter status matches a `done_values` entry (e.g. `status: done`) are automatically excluded from the task list.
-- **Project tasks**: Files with a `project` tag and a frontmatter due date appear as a synthetic "project" task in the taskfile, sorted after regular tasks with the same date.
-
-The `require_tags` option restricts due date inheritance to files that have specific frontmatter tags. For example, `require_tags = { "project" }` means only files tagged `project` will have their frontmatter due date inherited by undated tasks.
-
-### Source edits
-
-Taskbuffer actions write source files directly. Save unsaved source buffers before
-using completion, timers, taskfile date edits, or frontmatter date fallback; these
-actions refuse to overwrite unsaved changes. Inline date edits in Markdown stay
-in the buffer and use Neovim's normal undo history.
-
-If a source changes while taskbuffer is open, run `:Tasks` and wait for the refresh
-before acting on it. Stale task locations are rejected. Generated taskfiles live
-in private session directories beneath `tmpdir` and are removed on normal exit.
-
-### Health Check
-
-Run `:checkhealth taskbuffer` to verify your setup. The health check validates:
-- Neovim version (>= 0.10)
-- ripgrep and the system `cp` utility are available
-- Source directories exist
-- telescope.nvim availability (optional)
-
-## Task Syntax
-
-Tasks are standard markdown checkboxes with optional metadata:
-
-```
-- [ ] Task body <30m> #tag (@[[2026-02-17]] 16:00)
-```
-
-| Component | Format | Required |
-|-----------|--------|----------|
-| Checkbox | `- [ ]`, `- [x]`, `- [-]` | Yes |
-| Body | Free text | Yes |
-| Duration | `<Nm>` (e.g. `<30m>`, `<90m>`) | No |
-| Tags | `#tag-name` | No |
-| Due date | `(@[[YYYY-MM-DD]])` | No |
-| Due time | `(@[[YYYY-MM-DD]] HH:MM)` | No |
-
-### Markers
-
-Markers are appended to task lines to track state changes:
-
-| Marker | Meaning |
-|--------|---------|
-| `::start [[DATE]] TIME` | Task timer started |
-| `::stop [[DATE]] TIME` | Task timer stopped |
-| `::complete [[DATE]] TIME` | Task completed |
-| `::deferral [[DATE]] TIME` | Task deferred |
-| `::original [[DATE]]` | Original due date (preserved on first deferral) |
-| `::irrelevant [[DATE]] TIME` | Marked irrelevant |
-
-Full example:
-
-```
-- [x] Write report <30m> #work (@[[2026-02-17]] 15:00) ::start [[2026-02-17]] 15:17 ::complete [[2026-02-17]] 17:19
-```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `:Tasks` | Open the taskfile buffer |
-| `:TasksClear` | Clear tag filters and refresh |
-| `:TasksUndated` | Open taskfile with undated tasks visible |
-| `:TasksProfile [start\|stop\|reset\|report]` | Record and inspect performance timings |
-
-## Performance debugging
-
-Run `:TasksProfile start`, reproduce a slow task operation, then run
-`:TasksProfile stop`. The report separates scans, parsing, frontmatter,
-formatting, buffer updates, and editor-wide scheduling delay. Recording is off
-by default and keeps a bounded sample history in memory.
-
-Setup installs lightweight lazy entry points. Opening tasks starts concurrent
-async scans; large results are processed in short batches. Unchanged sources and
-display-only changes reuse cached data. Hiding taskbuffer cancels pending work.
-Plugin managers generate help tags; use `make helptags` for development checkouts.
-
-For startup timing, set `vim.g.taskbuffer_profile = true` before setup and use
-Neovim's `--startuptime` to capture plugin loading. Developers can run `make bench`
-for isolated startup comparisons and generated task workloads. See the
-[performance guide](docs/performance.md) or `:help taskbuffer-performance` for
-instructions, interpretation, and Lua sampling profiles.
-
-## Keybindings
-
-### Global (all filetypes)
-
-| Action | Default | Description |
-|--------|---------|-------------|
-| Complete | `<leader>tc` | Mark task on current line as complete |
-| Defer | `<leader>td` | Defer task on current line |
-| Check off | `<leader>tx` | Quick check-off (no marker) |
-| Irrelevant | `<leader>ti` | Mark task irrelevant |
-| Undo irrelevant | `<leader>tu` | Undo irrelevant |
-| Note | `<leader>ev` | Insert a dated note entry |
-
-### Taskfile buffer
-
-| Action | Default | Description |
-|--------|---------|-------------|
-| Start task | `<leader>tb` | Start timer for task under cursor |
-| Go to file | `gf` / `<CR>` | Jump to source file location |
-| Irrelevant | `<leader>ti` | Mark task irrelevant |
-| Undo irrelevant | `<leader>tu` | Undo irrelevant |
-| Filter tags | `#` | Open Telescope tag picker |
-| Reset filters | `<leader>tt` | Clear all filters |
-| Toggle markers | `<leader>tj` | Show/hide `::` markers |
-| Toggle undated | `<leader>ts` | Show/hide undated tasks |
-| Shift date back | `<M-Left>` | Move due date earlier (accepts count) |
-| Shift date forward | `<M-Right>` | Move due date later (accepts count) |
-| Set date today | `<C-T>` | Set due date to today |
-| Quickfix | `<M-C-q>` | Send visual selection to quickfix |
-| Undo | `u` (auto-detect) | Undo last date change |
-| Redo | `<C-r>` (auto-detect) | Redo last date change |
-
-Date shift, set today, and quickfix also work in visual mode on multiple tasks.
-
-### Markdown files
-
-| Action | Default | Description |
-|--------|---------|-------------|
-| Shift date back | `<M-Left>` | Move due date earlier (accepts count) |
-| Shift date forward | `<M-Right>` | Move due date later (accepts count) |
-| Set date today | `<C-T>` | Set due date to today |
-
-## Architecture
-
-```
-Markdown files ──rg────────> scan.lua ──parse.lua──> tasks ──format.lua──> .taskfile
-                                                                             |
-Neovim <── buffer.lua reads .taskfile <──────────────────────────────────────┘
-         keymaps.lua → actions.lua mutate source files (defer, irrelevant, etc.)
-```
-
-The plugin is pure Lua — the pipeline runs in-process, with `rg` (ripgrep) as the only external dependency.
-
-**Lua pipeline** (`lua/taskbuffer/`): scanning (`scan.lua`), parsing (`parse.lua`), formatting (`format.lua`), horizon logic (`horizon.lua`), strftime conversion (`strftime.lua`), file mutation (`mutate.lua`), timer state (`state.lua`), frontmatter parsing (`frontmatter.lua`), pipeline orchestration (`context.lua`, `list.lua`, `actions.lua`).
-
-**Lua plugin / UI** (`lua/taskbuffer/`): config (`config.lua`), setup and public API (`init.lua`), buffer management (`buffer.lua`), autocmds (`autocmds.lua`), keymaps (`keymaps.lua`), commands (`commands.lua`), Telescope tag picker (`tags.lua`), undo/redo stack (`undo.lua`), utilities (`util.lua`), health check (`health.lua`).
-
-## Contributing
-
-Bug reports and pull requests are welcome. Please include a minimal reproduction config — see `repro.lua` in the repo root, or run:
-
-```bash
-nvim -u repro.lua
-```
-
-See `:help taskbuffer` for full documentation.
+I originally wrote taskbuffer in Bash, then as a Go binary with a Neovim plugin.
+The Go implementation remains in the Git history. The current Lua rewrite and
+the [Obsidian port](https://github.com/tjmisko/obsidian-taskbuffer) were built by
+AI coding agents under my direction.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — Tyler Misko.
