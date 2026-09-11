@@ -21,9 +21,14 @@ jobs:
         with:
           neovim: true
           version: ${{ matrix.neovim }}
-      - name: Verify ripgrep (Linux)
+      - name: Install ripgrep (Linux)
         if: runner.os == 'Linux'
-        run: rg --version
+        run: |
+          mkdir -p .deps/ripgrep
+          cd .deps/ripgrep
+          apt-get download ripgrep
+          dpkg -x ripgrep_*.deb .
+          echo "$PWD/usr/bin" >> "$GITHUB_PATH"
       - name: Install ripgrep (macOS)
         if: runner.os == 'macOS'
         run: brew list ripgrep || brew install ripgrep

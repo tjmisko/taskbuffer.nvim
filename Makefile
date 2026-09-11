@@ -5,7 +5,7 @@
 test: test-lua
 
 test-lua:
-	nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/"
+	python3 scripts/test-lua.py
 
 test-install:
 	python3 scripts/install-smoke.py

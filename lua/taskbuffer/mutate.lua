@@ -1,9 +1,8 @@
 -- mutate.lua — file-line mutation primitives (port of go/mutate.go).
 --
--- Phase-1 parity: these operate on FILE BYTES (read whole file -> modify lines
--- -> write whole file), exactly like mutate.go, so output is byte-for-byte
--- comparable to Go. The buffer-aware safety path (overview D9) is a LATER
--- actions-layer concern and is deliberately NOT implemented here.
+-- These operate on file bytes. The source module refuses writes to modified
+-- buffers, stages replacements, and refreshes clean loaded buffers after edits.
+-- Output matches the original engine except for corrected CRLF marker placement.
 --
 -- Newline fidelity (overview D10): we mirror Go's strings.Split("\n") /
 -- strings.Join("\n") exactly. vim.split(data, "\n", {plain=true}) keeps the
