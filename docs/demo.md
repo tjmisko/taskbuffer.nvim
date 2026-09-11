@@ -36,7 +36,8 @@ F5 does nothing during playback; use F8 first to restart. F6 pauses the keys,
 while OBS continues recording. Avoid other typing during a take. Between takes,
 you can explore the sample vault normally. F5 discards those sample edits.
 
-The sequence takes roughly a minute: open the list, filter by tag, shift and
+The sequence targets a 60–90 second overview (about 75 seconds at normal speed):
+open the list, filter by tag, shift and
 undo a due date, jump to a source, edit an unsaved task, mark it irrelevant,
 undo/redo, save, refresh, and check off another task. Dates are relative to the
 day of launch, so the date groups remain useful in future recordings.
