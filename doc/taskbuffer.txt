@@ -278,6 +278,14 @@ Run `:checkhealth taskbuffer` to verify your setup. Checks:
 5. COMMANDS                                         *taskbuffer-commands*
 
                                                                    *:Tasks*
+Source edits:
+    Completion, timers, taskfile date edits, and frontmatter date fallback refuse
+    to overwrite a source buffer with unsaved changes. Save that buffer first.
+    Inline Markdown date edits remain in the buffer and use normal Neovim undo.
+    If source files change, run :Tasks and wait for the refresh before acting on
+    a task. Stale task locations are rejected. Generated taskfiles are private to
+    the Neovim session, beneath tmpdir, and removed on normal exit.
+
 :Tasks                  Open the taskfile buffer. Clears any active tag
                         filter and refreshes the task list.
 

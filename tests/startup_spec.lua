@@ -24,7 +24,7 @@ require("taskbuffer").setup({
     sources = { dir }, tmpdir = dir, state_dir = dir,
     inbox = { file = dir .. "/inbox.md" },
 })
-for _, name in ipairs({ "scan", "list", "parse", "frontmatter", "buffer", "tags", "keymaps", "util", "async" }) do
+for _, name in ipairs({ "scan", "list", "parse", "frontmatter", "buffer", "tags", "keymaps", "util", "async", "source" }) do
     assert(not package.loaded["taskbuffer." .. name], "eagerly loaded " .. name)
 end
 vim.bo.filetype = "markdown"

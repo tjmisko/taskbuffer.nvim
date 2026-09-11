@@ -43,6 +43,12 @@ end
 
 local function build_tasks(ctx, matches, projects, tags_only)
     frontmatter.reset()
+    local originals = {}
+    for _, match in ipairs(matches) do
+        async.checkpoint()
+        originals[match.path] = originals[match.path] or {}
+        originals[match.path][match.line_number] = match.text:gsub("\r$", "")
+    end
     local errors = ctx.strict and not tags_only and {} or nil
     ctx.date_errors = errors
     local tasks = profile.measure("parse", parse.parse_tasks, matches, ctx)
@@ -65,7 +71,7 @@ local function build_tasks(ctx, matches, projects, tags_only)
         end
     end
     add_tags(seen, project_tasks)
-    return { tasks = tasks, tags = sorted_tags(seen), errors = errors }
+    return { tasks = tasks, tags = sorted_tags(seen), errors = errors, originals = originals }
 end
 build_tasks = profile.wrap("tasks.build", build_tasks)
 
@@ -251,10 +257,10 @@ function M.list_async(opts, cb)
     local ctx, config = new_context(opts)
     local cancelled = false
     local cancel_collect, cancel_render
-    local function finish(text, err)
+    local function finish(text, err, data)
         profile.finish(span)
         if not cancelled then
-            cb(text, err)
+            cb(text, err, data)
         end
     end
     local function display(data, err)
@@ -264,7 +270,9 @@ function M.list_async(opts, cb)
         end
         cancel_render = async.run(function()
             return render(ctx, data)
-        end, finish)
+        end, function(text, failure)
+            finish(text, failure, data)
+        end)
     end
     if opts.reuse and cached and cached.config == config then
         display(cached.data)

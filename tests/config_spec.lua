@@ -115,3 +115,37 @@ describe("notes_dir backward compat", function()
         assert.are.equal("/tmp/notes", tb.config.sources[1])
     end)
 end)
+
+describe("configuration isolation", function()
+    it("preserves source globs for on-demand discovery", function()
+        local dir = vim.fn.tempname()
+        vim.fn.mkdir(dir, "p")
+        vim.fn.writefile({ "- [ ] One" }, dir .. "/one.md")
+        vim.fn.writefile({ "- [ ] Two" }, dir .. "/two.md")
+        local pattern = dir .. "/*.md"
+        require("taskbuffer.config").apply({ sources = { pattern } })
+        assert.are.same({ pattern }, require("taskbuffer.config").values.sources)
+        vim.fn.delete(dir, "rf")
+    end)
+
+    it("allows an explicitly empty source list", function()
+        require("taskbuffer.config").apply({ sources = {} })
+        assert.are.same({}, require("taskbuffer.config").values.sources)
+    end)
+
+    it("replaces list options instead of retaining default entries", function()
+        require("taskbuffer.config").apply({ frontmatter = { status = { done_values = { "archived" } } } })
+        assert.are.same({ "archived" }, require("taskbuffer.config").values.frontmatter.status.done_values)
+    end)
+
+    it("does not mutate defaults or the caller's options", function()
+        local config = require("taskbuffer.config")
+        local defaults = vim.deepcopy(config.defaults)
+        local opts = { notes_dir = "/tmp/taskbuffer-config-example", formats = { tag_prefix = "@" } }
+        local original = vim.deepcopy(opts)
+        config.apply(opts)
+        config.values.formats.checkbox.open = "changed"
+        assert.are.same(defaults, config.defaults)
+        assert.are.same(original, opts)
+    end)
+end)

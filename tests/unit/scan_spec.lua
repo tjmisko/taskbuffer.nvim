@@ -517,3 +517,25 @@ describe("async process lifecycle", function()
         end, 5))
     end)
 end)
+
+describe("single-file sources", function()
+    for _, fallback in ipairs({ false, true }) do
+        it("keeps filename prefixes with " .. (fallback and "grep" or "rg"), function()
+            local dir = make_vault()
+            local path = write_file(dir, "single.md", "- [ ] Only task\n")
+            local original = scan._have_rg
+            if fallback then
+                scan._have_rg = function()
+                    return false
+                end
+            end
+            local succeeded, matches, err = pcall(scan.scan, ctx(path))
+            scan._have_rg = original
+            assert.is_true(succeeded)
+            assert.is_nil(err)
+            assert.are.equal(1, #matches)
+            assert.are.equal(path, matches[1].path)
+            assert.are.equal(1, matches[1].line_number)
+        end)
+    end
+end)

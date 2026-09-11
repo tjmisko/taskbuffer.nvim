@@ -138,8 +138,10 @@ describe("async taskfile buffers", function()
         requests[2].cb(nil, "scan failed")
         assert.is_false(buffer.get_refreshing())
         assert.are.equal("existing", text())
-        -- A missing output directory exercises write failure after a good scan.
-        require("taskbuffer.config").values.tmpdir = dir .. "/missing"
+        -- A directory at the output filename exercises a write failure.
+        local output = vim.api.nvim_buf_get_name(0)
+        vim.fn.delete(output)
+        vim.fn.mkdir(output)
         buffer.refresh_and_restore_cursor()
         wait_for(3)
         requests[3].cb("replacement\n")

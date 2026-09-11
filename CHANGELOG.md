@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Performance and release hardening
+
+- Keep setup limited to configuration and lazy entry points; expand source globs
+  only when discovering tasks. Run concurrent scans and process large results in
+  cancellable slices, reusing unchanged source snapshots and formatted views.
+- Add opt-in `:TasksProfile` instrumentation and an isolated benchmark harness.
+- Protect unsaved source buffers from disk mutations; refresh clean loaded
+  buffers after successful edits. Stage source writes before replacement so
+  failed writes do not truncate the original; preserve permissions and symlinks.
+- Route global actions in taskbuffer to the source task, reject stale task
+  locations, and ignore headings. Escape source filenames when navigating.
+- Start timers through the action API, creating state directories on demand.
+  Refuse to stop a different task after a stored task location becomes stale.
+- Preserve CRLF and missing final newlines in date edits and undo/redo.
+- Use private session directories for generated taskfiles to avoid collisions
+  between Neovim instances; remove generated output on normal exit.
+- Correct empty/list configuration overrides, avoid mutating caller options,
+  and keep filename prefixes when scanning a single file.
+- Add action safety and installation regressions, isolate the test runner from
+  personal configuration, and cover Neovim 0.10.0/stable on Linux and macOS in CI.
+
+
 ### Migrated from Go to pure Lua
 
 taskbuffer's task engine was originally a Go binary that the plugin shelled out

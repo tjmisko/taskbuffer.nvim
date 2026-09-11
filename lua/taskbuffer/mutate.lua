@@ -9,8 +9,8 @@
 -- strings.Join("\n") exactly. vim.split(data, "\n", {plain=true}) keeps the
 -- trailing empty element for a file ending in "\n" (just like Split), and
 -- table.concat(lines, "\n") restores it (just like Join). So a file WITHOUT a
--- trailing newline stays without one, and CRLF "\r" is preserved verbatim
--- (TrimRight only strips " \t", never "\r", matching Go).
+-- trailing newline stays without one. Markers go before the CR in CRLF files,
+-- correcting the old Go behavior that placed them after it.
 --
 -- All functions return `ok:boolean, err:string|nil` (mirrors Go's error return).
 
@@ -48,13 +48,7 @@ end
 
 -- Write a raw byte string, overwriting the file.
 local function write_string(path, data)
-    local f = io.open(path, "wb")
-    if not f then
-        return false, "writing " .. path
-    end
-    f:write(data)
-    f:close()
-    return true
+    return require("taskbuffer.source").write(path, data)
 end
 
 -- Write lines back exactly like Go's strings.Join(lines, "\n").
@@ -87,7 +81,12 @@ function M.append_to_line(path, lnum, text)
     if lnum < 1 or lnum > #lines then
         return false, out_of_range(lnum, #lines)
     end
-    lines[lnum] = trim_right_ws(lines[lnum]) .. " " .. text
+    local line = lines[lnum]
+    local cr = line:sub(-1) == "\r" and "\r" or ""
+    if cr ~= "" then
+        line = line:sub(1, -2)
+    end
+    lines[lnum] = trim_right_ws(line) .. " " .. text .. cr
     return write_lines(path, lines)
 end
 
@@ -177,6 +176,10 @@ function M.remove_last_marker(path, lnum, kind, date_fmt, time_fmt, marker_prefi
     local base = "%s*" .. pesc(marker_prefix) .. pesc(kind) .. "%s+%[%[" .. date_run .. "%]%]"
 
     local line = lines[lnum]
+    local cr = line:sub(-1) == "\r" and "\r" or ""
+    if cr ~= "" then
+        line = line:sub(1, -2)
+    end
     local last_s, last_e
     local pos = 1
     while true do
@@ -207,7 +210,7 @@ function M.remove_last_marker(path, lnum, kind, date_fmt, time_fmt, marker_prefi
 
     line = line:sub(1, last_s - 1) .. line:sub(last_e + 1)
     line = trim_right_ws(line) -- mutate.go:80
-    lines[lnum] = line
+    lines[lnum] = line .. cr
     return write_lines(path, lines)
 end
 

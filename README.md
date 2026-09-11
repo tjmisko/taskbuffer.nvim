@@ -18,7 +18,8 @@ A simple Neovim plugin for managing tasks defined in plain text. Tasks are store
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) on PATH
 - Optional: [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (for tag filtering)
 
-No build step or external binary required — the plugin is pure Lua.
+No build step or separate taskbuffer executable is required. The plugin is pure Lua;
+ripgrep performs file discovery.
 
 ## Installation
 
@@ -189,6 +190,17 @@ taskbuffer reads YAML frontmatter from markdown files to enrich tasks:
 
 The `require_tags` option restricts due date inheritance to files that have specific frontmatter tags. For example, `require_tags = { "project" }` means only files tagged `project` will have their frontmatter due date inherited by undated tasks.
 
+### Source edits
+
+Taskbuffer actions write source files directly. Save unsaved source buffers before
+using completion, timers, taskfile date edits, or frontmatter date fallback; these
+actions refuse to overwrite unsaved changes. Inline date edits in Markdown stay
+in the buffer and use Neovim's normal undo history.
+
+If a source changes while taskbuffer is open, run `:Tasks` and wait for the refresh
+before acting on it. Stale task locations are rejected. Generated taskfiles live
+in private session directories beneath `tmpdir` and are removed on normal exit.
+
 ### Health Check
 
 Run `:checkhealth taskbuffer` to verify your setup. The health check validates:
@@ -305,7 +317,7 @@ Date shift, set today, and quickfix also work in visual mode on multiple tasks.
 ## Architecture
 
 ```
-Markdown files ──rg --json──> scan.lua ──parse.lua──> tasks ──format.lua──> .taskfile
+Markdown files ──rg────────> scan.lua ──parse.lua──> tasks ──format.lua──> .taskfile
                                                                              |
 Neovim <── buffer.lua reads .taskfile <──────────────────────────────────────┘
          keymaps.lua → actions.lua mutate source files (defer, irrelevant, etc.)

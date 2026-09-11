@@ -115,13 +115,15 @@ local function build_scan_argv(pattern, paths)
         -- --no-config (D5): ignore a user's RIPGREP_CONFIG_PATH that could inject
         -- --heading/--color and corrupt the plain layout. --null/-n/--no-heading/
         -- --color=never pin a deterministic, machine-parseable record layout.
-        argv = { "rg", "--no-config", "--color=never", "--no-heading", "-n", "--null", "-e", pattern }
+        argv =
+            { "rg", "--no-config", "--color=never", "--no-heading", "--with-filename", "-n", "--null", "-e", pattern }
     else
         -- grep fallback (rg absent). -Z=NUL-after-path, -n=line numbers,
         -- -r=recursive WITHOUT following symlinks (matches rg default; -R follows),
         -- -E=ERE (the alternation pattern needs it), -I=skip binary.
-        argv = { "grep", "-rnEIZ", "--include=*.md", "-e", pattern }
+        argv = { "grep", "-rnEHIZ", "--include=*.md", "-e", pattern }
     end
+    argv[#argv + 1] = "--"
     vim.list_extend(argv, paths)
     return argv
 end
@@ -136,6 +138,7 @@ local function build_project_argv(paths)
     else
         argv = { "grep", "-rlEI", "--include=*.md", "-e", "- project" }
     end
+    argv[#argv + 1] = "--"
     vim.list_extend(argv, paths)
     return argv
 end

@@ -90,15 +90,12 @@ end
 ---@param ct CurrentTask
 ---@return boolean ok, string|nil err
 function M.write_current_task(state_dir, ct)
-    vim.fn.mkdir(state_dir, "p")
-    local line = string.format("%d\t%s\t%s\t%d\n", ct.start_time, ct.name, ct.filepath, ct.linenumber)
-    local f = io.open(M.state_path(state_dir), "wb")
-    if not f then
-        return false, "writing " .. M.state_path(state_dir)
+    local ok, err = pcall(vim.fn.mkdir, state_dir, "p")
+    if not ok then
+        return false, tostring(err)
     end
-    f:write(line)
-    f:close()
-    return true
+    local line = string.format("%d\t%s\t%s\t%d\n", ct.start_time, ct.name, ct.filepath, ct.linenumber)
+    return require("taskbuffer.source").write(M.state_path(state_dir), line)
 end
 
 -- ClearCurrentTaskFrom (state.go:91). Remove the file; missing -> ok (no error).

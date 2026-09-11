@@ -54,6 +54,12 @@ end
 ---@param lines string[]
 ---@param days integer
 local function shift_task_dates_bulk(lines, days)
+    for _, line in ipairs(lines) do
+        local path = util.parse_taskfile_line(line)
+        if path and not util.taskfile_location(line) then
+            return
+        end
+    end
     local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
     local edits_by_file = {}
@@ -120,7 +126,7 @@ end
 --- Get filepath and linenumber from a taskfile line.
 local function get_task_location_from_taskfile()
     local line = vim.fn.getline(".")
-    return util.parse_taskfile_line(line)
+    return util.taskfile_location(line)
 end
 
 local function get_task_location_from_current_buffer()
@@ -133,7 +139,7 @@ local function shift_task_date_in_taskfile(days)
     local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
     local line = vim.api.nvim_get_current_line()
-    local filepath, linenumber = util.parse_taskfile_line(line)
+    local filepath, linenumber = util.taskfile_location(line)
     if not filepath or not linenumber then
         vim.notify("[taskbuffer] could not parse taskfile line", vim.log.levels.WARN)
         return
@@ -145,7 +151,9 @@ local function shift_task_date_in_taskfile(days)
     end
     local new_line, new_date = util.shift_date_in_string(source_line, days)
     if new_line then
-        util.replace_line_in_file(filepath, linenumber, new_line)
+        if not util.replace_line_in_file(filepath, linenumber, new_line) then
+            return
+        end
         local direction = days > 0 and "forward" or "back"
         local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
         require("taskbuffer.undo").push({
@@ -185,6 +193,12 @@ end
 --- Falls back to frontmatter due date for undated tasks (deduplicated per file).
 ---@param lines string[]
 local function set_task_dates_today_bulk(lines)
+    for _, line in ipairs(lines) do
+        local path = util.parse_taskfile_line(line)
+        if path and not util.taskfile_location(line) then
+            return
+        end
+    end
     local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
     local edits_by_file = {}
@@ -246,7 +260,7 @@ local function set_date_today_in_taskfile()
     local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
     local line = vim.api.nvim_get_current_line()
-    local filepath, linenumber = util.parse_taskfile_line(line)
+    local filepath, linenumber = util.taskfile_location(line)
     if not filepath or not linenumber then
         vim.notify("[taskbuffer] could not parse taskfile line", vim.log.levels.WARN)
         return
@@ -258,7 +272,9 @@ local function set_date_today_in_taskfile()
     end
     local new_line, new_date = util.set_date_today_in_string(source_line)
     if new_line then
-        util.replace_line_in_file(filepath, linenumber, new_line)
+        if not util.replace_line_in_file(filepath, linenumber, new_line) then
+            return
+        end
         require("taskbuffer.undo").push({
             op = "set today",
             edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
@@ -308,7 +324,6 @@ local function set_date_today_in_markdown()
         if fm_line_num then
             local fm_new_date = util.set_frontmatter_due_today(filepath, due_key)
             if fm_new_date then
-                vim.cmd("edit!")
                 vim.api.nvim_win_set_cursor(0, { fm_line_num, 0 })
                 vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
                 return
@@ -335,7 +350,6 @@ local function shift_task_date_in_markdown(days)
         local due_key = cfg.frontmatter.due_key or "due"
         local fm_new_date, fm_line_num = util.shift_frontmatter_due(filepath, days, due_key)
         if fm_new_date then
-            vim.cmd("edit!")
             vim.api.nvim_win_set_cursor(0, { fm_line_num, 0 })
             vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
             return
@@ -347,63 +361,49 @@ end
 
 -- Loaded only by a key action or a matching FileType event.
 function M.global_action(verb)
-    local filepath, linenumber = get_task_location_from_current_buffer()
-    util.run_task_cmd({ verb, filepath, tostring(linenumber) }, vim.bo.filetype == "taskfile")
-    if vim.bo.filetype ~= "taskfile" then
-        vim.cmd("edit!")
+    local in_taskfile = vim.bo.filetype == "taskfile"
+    local filepath, linenumber
+    if in_taskfile then
+        filepath, linenumber = get_task_location_from_taskfile()
+    else
+        filepath, linenumber = get_task_location_from_current_buffer()
+    end
+    if filepath and linenumber then
+        util.run_task_cmd({ verb, filepath, tostring(linenumber) }, in_taskfile)
     end
 end
 
 function M.attach_taskfile()
-    local config = get_config()
-    local state_path = config.state_dir .. "/current_task"
-
     map("n", "taskfile", "start_task", function()
-        local f = io.open(state_path, "r")
-        if f then
-            f:close()
-            local ctx = require("taskbuffer.context").build_context(config, {})
-            require("taskbuffer.actions").stop(ctx)
-        end
-        local line = vim.fn.getline(".")
-        local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-        local linenumber =
-            string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
-        local datetime = os.time()
-        local function trim(s)
-            return (s:gsub("^%s+", ""):gsub("%s+$", ""))
-        end
-        local task_content = string.match(line, "^.-|.-|.-|(.*)$")
-        task_content = task_content and task_content:match("^(.-)%s*::") or task_content
-        if task_content then
-            task_content = trim(task_content)
-        end
-        local g, err = io.open(state_path, "w")
-        if not g then
-            vim.notify("[taskbuffer] failed to write state: " .. err, vim.log.levels.ERROR)
+        local filepath, linenumber = get_task_location_from_taskfile()
+        if not filepath then
             return
         end
-        g:write(datetime .. "\t" .. task_content .. "\t" .. filepath .. "\t" .. linenumber)
-        g:close()
-        local fmts = config.formats
-        local start_suffix = " "
-            .. fmts.marker_prefix
-            .. "start [["
-            .. os.date(fmts.date)
-            .. "]] "
-            .. os.date(fmts.time)
-        util.append_to_line(filepath, tonumber(linenumber), start_suffix)
+        local config = get_config()
+        local ctx = require("taskbuffer.context").build_context(config, {})
+        local line = util.read_line_from_file(filepath, linenumber)
+        local task = line
+            and require("taskbuffer.parse").parse_task({ path = filepath, line_number = linenumber, text = line }, ctx)
+        if not task then
+            vim.notify("[taskbuffer] no checkbox task on this line", vim.log.levels.WARN)
+            return
+        end
+        local ok, err = require("taskbuffer.actions").start(filepath, linenumber, task.body, ctx)
+        if not ok then
+            vim.notify("[taskbuffer] " .. tostring(err), vim.log.levels.ERROR)
+            return
+        end
         require("taskbuffer.buffer").refresh_and_restore_cursor()
     end, { buffer = true, desc = "Start task" })
 
     local function go_to_file()
-        local line = vim.fn.getline(".")
-        local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-        local linenumber =
-            string.sub(line, string.find(line, ":") + 1, string.find(line, ":", string.find(line, ":") + 1) - 1)
-        vim.cmd("e " .. filepath)
-        vim.cmd("normal " .. linenumber .. "G")
-        vim.cmd("normal zz")
+        local filepath, linenumber = util.parse_taskfile_line(vim.api.nvim_get_current_line())
+        if not filepath then
+            return
+        end
+        vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+        vim.api.nvim_win_set_cursor(0, { math.min(linenumber, vim.api.nvim_buf_line_count(0)), 0 })
+        vim.cmd("normal! zz")
     end
 
     map("n", "taskfile", "go_to_file", go_to_file, { buffer = true, desc = "Go to task source" })
@@ -411,12 +411,16 @@ function M.attach_taskfile()
 
     map("n", "taskfile", "irrelevant", function()
         local filepath, linenumber = get_task_location_from_taskfile()
-        util.run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, true)
+        if filepath then
+            util.run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, true)
+        end
     end, { buffer = true })
 
     map("n", "taskfile", "undo_irrelevant", function()
         local filepath, linenumber = get_task_location_from_taskfile()
-        util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
+        if filepath then
+            util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
+        end
     end, { buffer = true })
 
     map("n", "taskfile", "filter_tags", function()

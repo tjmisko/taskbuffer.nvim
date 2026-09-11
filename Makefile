@@ -1,4 +1,4 @@
-.PHONY: test test-lua bench helptags test-e2e test-e2e-lazy test-e2e-vimplug \
+.PHONY: test test-lua test-install bench helptags test-e2e test-e2e-lazy test-e2e-vimplug \
 	test-e2e-us-dates test-e2e-eu-dates test-e2e-custom-checkbox \
 	test-e2e-12h-time test-e2e-minimal-wrapper test-e2e-all lint clean
 
@@ -6,6 +6,9 @@ test: test-lua
 
 test-lua:
 	nvim --headless -u tests/minimal_init.lua -c "PlenaryBustedDirectory tests/"
+
+test-install:
+	python3 scripts/install-smoke.py
 
 bench:
 	python3 scripts/benchmark.py $(BENCH_ARGS)

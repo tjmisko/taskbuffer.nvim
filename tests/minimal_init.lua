@@ -6,6 +6,11 @@ local tmp = vim.fn.tempname()
 vim.env.XDG_CONFIG_HOME = tmp .. "/config"
 vim.env.XDG_STATE_HOME = tmp .. "/state"
 vim.env.XDG_DATA_HOME = tmp .. "/data"
+-- Neovim builds runtimepath before sourcing this init. Changing XDG variables
+-- alone leaves the user's after/plugin files active in the parent test runner.
+vim.opt.runtimepath = { vim.env.VIMRUNTIME }
+vim.opt.packpath = { vim.env.VIMRUNTIME }
+vim.env.NVIM_LOG_FILE = tmp .. "-nvim.log"
 
 -- Determine project root from this file's location
 local script_dir = debug.getinfo(1, "S").source:sub(2):match("(.*)/")

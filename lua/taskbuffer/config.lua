@@ -170,15 +170,12 @@ M.values = vim.deepcopy(M.defaults)
 ---@param override table
 ---@return table
 local function deep_merge(base, override)
-    local result = {}
-    for k, v in pairs(base) do
-        result[k] = v
-    end
+    local result = vim.deepcopy(base)
     for k, v in pairs(override) do
-        if type(v) == "table" and type(result[k]) == "table" then
+        if type(v) == "table" and type(result[k]) == "table" and not vim.islist(result[k]) then
             result[k] = deep_merge(result[k], v)
         else
-            result[k] = v
+            result[k] = vim.deepcopy(v)
         end
     end
     return result
@@ -191,7 +188,9 @@ local function expand_path(p)
     if type(p) ~= "string" then
         return p
     end
-    return vim.fn.expand(p)
+    -- Normalize home/environment syntax without expanding globs or consulting
+    -- source directories during startup. Discovery owns glob expansion.
+    return vim.fs.normalize(p)
 end
 
 --- Expand paths in the config that represent filesystem locations.
@@ -212,7 +211,7 @@ end
 --- Merge user options into defaults and expand paths.
 ---@param opts TaskbufferConfig|nil
 function M.apply(opts)
-    opts = opts or {}
+    opts = vim.deepcopy(opts or {})
 
     -- Backward compat: convert notes_dir to sources
     if opts.notes_dir then

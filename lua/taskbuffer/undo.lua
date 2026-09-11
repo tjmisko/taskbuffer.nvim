@@ -75,6 +75,9 @@ function M.undo()
 
     -- Validate all edits before applying any
     for _, edit in ipairs(entry.edits) do
+        if not util.check_source(edit.filepath) then
+            return
+        end
         local current = util.read_line_from_file(edit.filepath, edit.linenumber)
         if current ~= edit.new_line then
             vim.notify("[taskbuffer] undo refused: source file modified externally", vim.log.levels.WARN)
@@ -91,7 +94,9 @@ function M.undo()
         return a.filepath > b.filepath
     end)
     for _, edit in ipairs(edits_sorted) do
-        util.replace_line_in_file(edit.filepath, edit.linenumber, edit.old_line)
+        if not util.replace_line_in_file(edit.filepath, edit.linenumber, edit.old_line) then
+            return
+        end
     end
 
     table.remove(undo_stack)
@@ -116,6 +121,9 @@ function M.redo()
 
     -- Validate all edits before applying any
     for _, edit in ipairs(entry.edits) do
+        if not util.check_source(edit.filepath) then
+            return
+        end
         local current = util.read_line_from_file(edit.filepath, edit.linenumber)
         if current ~= edit.old_line then
             vim.notify("[taskbuffer] redo refused: source file modified externally", vim.log.levels.WARN)
@@ -132,7 +140,9 @@ function M.redo()
         return a.filepath > b.filepath
     end)
     for _, edit in ipairs(edits_sorted) do
-        util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line)
+        if not util.replace_line_in_file(edit.filepath, edit.linenumber, edit.new_line) then
+            return
+        end
     end
 
     table.remove(redo_stack)

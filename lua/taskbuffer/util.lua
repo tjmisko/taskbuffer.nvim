@@ -1,99 +1,75 @@
 local M = {}
 
---- True when `path` exists on disk. Guards the io.lines() callers below:
---- io.lines() raises (rather than returning nil) when the path is missing,
---- which crashes callers when a source note has been deleted or renamed since
---- the taskfile was generated.
----@param path string
----@return boolean
-local function file_exists(path)
-    return (vim.uv or vim.loop).fs_stat(path) ~= nil
-end
-
---- Parse a taskfile line into filepath and line number.
----@param line string
----@return string filepath
----@return integer|nil linenumber
+--- Parse the location prefix; headings and blank lines are not tasks.
 function M.parse_taskfile_line(line)
-    local filepath = string.sub(line, 1, string.find(line, ":") - 1)
-    local second_colon = string.find(line, ":", string.find(line, ":") + 1)
-    local linenumber = tonumber(string.sub(line, string.find(line, ":") + 1, second_colon - 1))
-    return filepath, linenumber
+    local path, lnum = line:match("^(.-):(%d+):%d+:")
+    if not path or path == "" or tonumber(lnum) < 1 then
+        return nil, nil
+    end
+    return path, tonumber(lnum)
 end
 
---- Read a specific line from a file on disk.
----@param path string
----@param target integer
----@return string|nil
-function M.read_line_from_file(path, target)
-    if not file_exists(path) then
+local function read_lines(path)
+    local file = io.open(path, "rb")
+    if not file then
         return nil
     end
-    local i = 0
-    for l in io.lines(path) do
-        i = i + 1
-        if i == target then
-            return l
-        end
-    end
-    return nil
+    local data = file:read("*a")
+    file:close()
+    return data and vim.split(data, "\n", { plain = true })
 end
 
---- Replace a single line in a file on disk.
----@param path string
----@param target_line integer
----@param new_content string
-function M.replace_line_in_file(path, target_line, new_content)
-    if not file_exists(path) then
-        vim.notify("[taskbuffer] source file not found: " .. path, vim.log.levels.WARN)
-        return
-    end
-    local lines = {}
-    local i = 0
-    for line in io.lines(path) do
-        i = i + 1
-        if i == target_line then
-            lines[#lines + 1] = new_content
-        else
-            lines[#lines + 1] = line
-        end
-    end
-    local f, err = io.open(path, "w")
-    if not f then
-        vim.notify("[taskbuffer] failed to write file: " .. err, vim.log.levels.ERROR)
-        return
-    end
-    f:write(table.concat(lines, "\n"))
-    f:write("\n")
-    f:close()
+function M.read_line_from_file(path, target)
+    local lines = read_lines(path)
+    local line = lines and lines[target]
+    return line and (line:gsub("\r$", ""))
 end
 
---- Append a suffix to a specific line in a file on disk.
----@param path string
----@param target_line integer
----@param suffix string
-function M.append_to_line(path, target_line, suffix)
-    if not file_exists(path) then
-        vim.notify("[taskbuffer] source file not found: " .. path, vim.log.levels.WARN)
-        return
+function M.check_source(path)
+    local ok, err = require("taskbuffer.source").check(path)
+    if not ok then
+        vim.notify("[taskbuffer] " .. err, vim.log.levels.WARN)
     end
-    local lines = {}
-    local i = 0
-    for line in io.lines(path) do
-        i = i + 1
-        if i == target_line then
-            line = line .. suffix
-        end
-        lines[#lines + 1] = line
+    return ok
+end
+
+-- Reject stale task locations and unsaved source buffers before any mutation.
+function M.taskfile_location(line)
+    local path, lnum = M.parse_taskfile_line(line)
+    if not path or not M.check_source(path) then
+        return nil, nil
     end
-    local f, err = io.open(path, "w")
-    if not f then
-        vim.notify("[taskbuffer] failed to write file: " .. err, vim.log.levels.ERROR)
-        return
+    local buffer = require("taskbuffer.buffer")
+    if buffer.validate_source and not buffer.validate_source(path, lnum) then
+        return nil, nil
     end
-    f:write(table.concat(lines, "\n"))
-    f:write("\n")
-    f:close()
+    return path, lnum
+end
+
+function M.replace_line_in_file(path, target, content)
+    local lines = read_lines(path)
+    if not lines or not lines[target] then
+        vim.notify("[taskbuffer] source line not found: " .. path, vim.log.levels.WARN)
+        return false
+    end
+    if lines[target]:sub(-1) == "\r" and content:sub(-1) ~= "\r" then
+        content = content .. "\r"
+    end
+    lines[target] = content
+    local ok, err = require("taskbuffer.source").write(path, table.concat(lines, "\n"))
+    if not ok then
+        vim.notify("[taskbuffer] " .. tostring(err), vim.log.levels.ERROR)
+    end
+    return ok
+end
+
+function M.append_to_line(path, target, suffix)
+    local line = M.read_line_from_file(path, target)
+    if not line then
+        vim.notify("[taskbuffer] source line not found: " .. path, vim.log.levels.WARN)
+        return false
+    end
+    return M.replace_line_in_file(path, target, line .. suffix)
 end
 
 --- Build a Lua pattern + os.date format from the configured date format.
@@ -300,12 +276,14 @@ end
 ---@return string|nil current_value (the date portion)
 ---@return boolean is_quoted
 function M.find_frontmatter_due_line(path, due_key)
-    if not file_exists(path) then
+    local lines = read_lines(path)
+    if not lines then
         return nil, nil, false
     end
     local in_fm = false
     local i = 0
-    for line in io.lines(path) do
+    for _, raw in ipairs(lines) do
+        local line = raw:gsub("\r$", "")
         i = i + 1
         if i == 1 then
             if line:match("^%-%-%-$") then
@@ -380,7 +358,9 @@ function M.shift_frontmatter_due(path, days, due_key)
         new_full_line = due_key .. ": " .. new_val
     end
 
-    M.replace_line_in_file(path, line_num, new_full_line)
+    if not M.replace_line_in_file(path, line_num, new_full_line) then
+        return nil
+    end
     return new_date, line_num, old_full_line, new_full_line
 end
 
@@ -416,7 +396,9 @@ function M.set_frontmatter_due_today(path, due_key)
         new_full_line = due_key .. ": " .. new_val
     end
 
-    M.replace_line_in_file(path, line_num, new_full_line)
+    if not M.replace_line_in_file(path, line_num, new_full_line) then
+        return nil
+    end
     return today, line_num, old_full_line, new_full_line
 end
 
@@ -426,7 +408,7 @@ end
 function M.taskfile_lines_to_qf(lines)
     local qf_list = {}
     for _, line in ipairs(lines) do
-        local filename, lnum, _, text = string.match(line, "^(.-):(.-):(.-):(.*)$")
+        local filename, lnum, text = string.match(line, "^(.-):(%d+):%d+:(.*)$")
         if filename and lnum then
             table.insert(qf_list, { filename = filename, lnum = tonumber(lnum), text = text })
         end
@@ -456,7 +438,21 @@ function M.run_task_cmd(args, refresh)
         vim.notify("[taskbuffer] unknown action: " .. tostring(args[1]), vim.log.levels.ERROR)
         return false
     end
+    if not args[2] or not tonumber(args[3]) or not M.check_source(args[2]) then
+        return false
+    end
     local ctx = require("taskbuffer.context").build_context(config, {})
+    local line = M.read_line_from_file(args[2], tonumber(args[3]))
+    if
+        not line
+        or not require("taskbuffer.parse").parse_task(
+            { path = args[2], line_number = tonumber(args[3]), text = line },
+            ctx
+        )
+    then
+        vim.notify("[taskbuffer] no task on this source line", vim.log.levels.WARN)
+        return false
+    end
     local ok, err = require("taskbuffer.actions")[method](args[2], tonumber(args[3]), ctx)
     if not ok then
         vim.notify("[taskbuffer] task command failed: " .. tostring(err), vim.log.levels.ERROR)

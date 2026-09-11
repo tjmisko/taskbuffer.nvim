@@ -60,6 +60,19 @@ local function read_line(path, lnum)
     return lines[lnum]
 end
 
+local function validate_running(ct, ctx)
+    local line = read_line(ct.filepath, ct.linenumber)
+    local task = line
+        and require("taskbuffer.parse").parse_task(
+            { path = ct.filepath, line_number = ct.linenumber, text = line },
+            ctx
+        )
+    if not task or task.body ~= ct.name then
+        return false, "running task moved or changed; correct its current_task state before stopping it"
+    end
+    return require("taskbuffer.source").check(ct.filepath)
+end
+
 -- Extract the inline due DATE string from a line. Mirrors Go's
 -- ctx.dateRe.FindStringSubmatch(line)[1] (main.go:449) and parse.lua's
 -- find_date_group: try the timed and timeless inline-due patterns and take the
@@ -91,6 +104,13 @@ end
 ---@return boolean ok, string|nil err
 function M.complete_at(path, lnum, ctx, now_epoch)
     now_epoch = now_epoch or os.time()
+    local running, state_err = state.read_current_task(ctx.state_dir)
+    if state_err then
+        return false, state_err
+    end
+    if running and running.filepath == path and running.linenumber == lnum then
+        return M.complete(ctx, now_epoch)
+    end
     local marker = state.format_marker("complete", now_epoch, ctx)
     local ok, err = mutate.append_to_line(path, lnum, marker)
     if not ok then
@@ -203,6 +223,11 @@ function M.stop(ctx, now_epoch)
         return true, "No task running."
     end
 
+    local valid, validation_err = validate_running(ct, ctx)
+    if not valid then
+        return false, validation_err
+    end
+
     local marker = state.format_marker("stop", now_epoch, ctx)
     local ok, aerr = mutate.append_to_line(ct.filepath, ct.linenumber, marker)
     if not ok then
@@ -232,6 +257,11 @@ function M.complete(ctx, now_epoch)
     end
     if not ct then
         return true, "No task running."
+    end
+
+    local valid, validation_err = validate_running(ct, ctx)
+    if not valid then
+        return false, validation_err
     end
 
     local marker = state.format_marker("complete", now_epoch, ctx)
@@ -264,6 +294,11 @@ end
 ---@return boolean ok, string|nil err_or_status
 function M.start(path, lnum, body, ctx, now_epoch)
     now_epoch = now_epoch or os.time()
+
+    local writable, write_err = require("taskbuffer.source").check(path)
+    if not writable then
+        return false, write_err
+    end
 
     local existing, err = state.read_current_task(ctx.state_dir)
     if err then

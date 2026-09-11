@@ -156,6 +156,23 @@ describe("actions.unset", function()
 end)
 
 describe("actions.stop", function()
+    it("refuses to stop a different task at a stale line number", function()
+        local dir = temp_dir()
+        local ctx = make_ctx(dir)
+        local path = temp_md("- [ ] Different task\n- [ ] Running task\n")
+        assert.is_true(state.write_current_task(dir, {
+            start_time = NOW,
+            name = "Running task",
+            filepath = path,
+            linenumber = 1,
+        }))
+        local before = read_raw(path)
+        local ok = actions.stop(ctx, NOW)
+        assert.is_false(ok)
+        assert.are.equal(before, read_raw(path))
+        assert.is_not_nil(state.read_current_task(dir))
+    end)
+
     it("appends the stop marker to the running task and clears state", function()
         local dir = temp_dir()
         local ctx = make_ctx(dir)

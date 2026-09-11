@@ -8,18 +8,33 @@ on:
 
 jobs:
   lua-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        neovim: [v0.10.0, stable]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Neovim
         uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
-          version: stable
+          version: ${{ matrix.neovim }}
+      - name: Verify ripgrep (Linux)
+        if: runner.os == 'Linux'
+        run: rg --version
+      - name: Install ripgrep (macOS)
+        if: runner.os == 'macOS'
+        run: brew list ripgrep || brew install ripgrep
       - name: Clone plenary.nvim
         run: git clone --depth 1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim
       - name: Run Lua tests
         run: make test-lua
+      - name: Install lazy.nvim for installation smoke test
+        run: git clone --depth 1 --branch stable https://github.com/folke/lazy.nvim .deps/lazy.nvim
+      - name: Test installation
+        run: make test-install
 
   lua-check:
     runs-on: ubuntu-latest
