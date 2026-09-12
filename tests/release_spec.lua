@@ -18,8 +18,9 @@ describe("release action safety", function()
             return not buffer.get_refreshing()
         end, 5))
         local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-        for i, line in ipairs(lines) do
-            if line:find(path, 1, true) then
+        for i in ipairs(lines) do
+            local task = buffer.task_at(i)
+            if task and task.file_path == path then
                 vim.api.nvim_win_set_cursor(0, { i, 0 })
                 return
             end
@@ -59,12 +60,12 @@ describe("release action safety", function()
         vim.fn.delete(dir, "rf")
     end)
 
-    it("keeps generated taskfiles in a private session directory", function()
+    it("keeps the interactive view in memory without creating an output file", function()
         open_tasks()
-        local output = vim.api.nvim_buf_get_name(0)
-        assert.are_not.equal(dir .. "/" .. os.date("%Y-%m-%d") .. ".taskfile", output)
-        local stat = vim.uv.fs_stat(vim.fn.fnamemodify(output, ":h"))
-        assert.are.equal(448, stat.mode % 512) -- 0700
+        assert.are.equal("taskbuffer://tasks", vim.api.nvim_buf_get_name(0))
+        assert.are.equal("nofile", vim.bo.buftype)
+        assert.is_false(vim.bo.modifiable)
+        assert.are.same({ "vault" }, vim.fn.readdir(dir))
     end)
 
     it("completes the source task from the aggregate buffer", function()

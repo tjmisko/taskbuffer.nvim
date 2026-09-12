@@ -54,8 +54,9 @@ before replacing the staged contents. A copy failure leaves the original intact.
 
 Bulk actions and timer transitions can touch several files. They are not
 transactions across files, and concurrent external writers are not locked out.
-Generated taskfiles are private to a session and cleaned up on normal exit;
-an abrupt process termination can leave temporary output behind.
+The interactive task list is an in-memory scratch buffer. Legacy script exports
+use private temporary files cleaned up on normal exit; an abrupt termination
+can leave those exports behind.
 
 The parser supports taskbuffer's documented task syntax and a limited frontmatter
 subset, not all Markdown/YAML constructs. The runtime pipeline is cooperative;

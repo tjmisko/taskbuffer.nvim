@@ -66,7 +66,8 @@ will usually equal max. Timings are inclusive and overlap: **do not sum rows**.
 | `tasks.build`, `render` | Source processing and display formatting, including yields |
 | `parse`, `frontmatter.*`, `format` | Individual processing stages, including yields |
 | `async.slice` | Actual uninterrupted CPU work between cooperative yields |
-| `taskfile.write`, `taskfile.publish` | Writing output and updating its target buffer |
+| `taskfile.publish` | Updating visible lines and their Lua task associations |
+| `taskfile.write` | Legacy synchronous script export only |
 | `refresh.request`, `tags.async.wall` | Action refresh dispatch and tag queries |
 | `event_loop.delay` | Editor-wide scheduling delay above the probe's 20 ms interval |
 
@@ -156,27 +157,34 @@ run from stage recording to reduce profiler interference. Neovim's Vimscript
   a requested operation is pending (or opt-in profiling is recording).
 - Re-entering taskbuffer scans for added/deleted files and checks relevant files'
   size, inode, mtime, and ctime. Unchanged files reuse the source snapshot; an
-  unchanged date/filter/marker view reuses its formatted text as well.
+  unchanged date/filter/marker view reuses its visible lines and row metadata.
 - Tag/marker/undated display changes reuse parsed tasks without a source scan.
   The tag picker also reuses the snapshot. Source mutations force a new snapshot;
   external edits appear on the next entry or `:Tasks` command.
 - Identical pending requests coalesce. A newer view/source request supersedes
   obsolete work. Hiding or deleting its task buffer cancels the subprocesses
   and any queued processing slices.
-- Results update only the originating buffer. Unchanged output does not rewrite
-  the taskfile or replace buffer lines, preserving the cursor and changedtick.
-  Refreshes do not reload buffers or replay FileType hooks.
+- Results update only the originating buffer. Interactive views live in memory
+  and never write a generated taskfile. Source locations are Lua metadata, so
+  the display needs no hidden filepath prefixes or regex-based location parsing.
+- Unchanged visible text preserves buffer lines and changedtick. Its row metadata
+  is replaced even when identical text now refers to different source tasks.
+  Refreshes preserve selected tasks by source identity and do not reload buffers
+  or replay FileType hooks.
 
 The slice budget is cooperative, not a hard deadline. Individual filesystem
-operations (glob expansion, metadata checks, frontmatter reads, output writes)
+operations (glob expansion, metadata checks, and frontmatter reads)
 remain synchronous, as do Neovim's buffer update APIs. A slow filesystem, a huge
 single frontmatter block/line, GC, or another plugin can exceed the budget.
 Metadata caching also relies on the filesystem reporting file changes. There
 are no background file watchers or periodic source scans.
 
 The synchronous `list.list()`, `list.tags()`, and `buffer.refresh_taskfile()`
-helpers remain available for scripts. Prefer `list.list_async(opts, callback)`
-and `list.tags_async(opts, callback)` in interactive code; each returns a cancel
-function. For a source refresh that also updates the visible task buffer, use
+helpers remain available for scripts; `list.list_async()` retains serialized
+text output too. `list.view_async(opts, callback)` returns `{lines, rows}` with
+only visible text and a 1-based row-to-task table. Headings and blank lines have
+no task entry. Its callback receives `(view, error, source_snapshot)`; treat the
+view and snapshot as immutable. `list.tags_async(opts, callback)` returns tags.
+Both asynchronous APIs return a cancel function. For a source refresh that also updates the visible task buffer, use
 `buffer.refresh_and_restore_cursor(callback)`; its callback runs after publication
 with an optional error. `buffer.refresh_view()` reuses the current snapshot.

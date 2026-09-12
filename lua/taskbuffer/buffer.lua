@@ -57,6 +57,7 @@ end
 
 local active
 local published = {}
+local view_name = "taskbuffer://tasks"
 local last_written
 local directories = {}
 local output_paths = {}
@@ -121,68 +122,99 @@ write_taskfile = profile.wrap("taskfile.write", write_taskfile)
 
 -- Update only the requested buffer, preserving each window's cursor/view. No
 -- edit! round trip, FileType replay, or touching the buffer the user moved to.
-local function publish(buf, text, data)
+local function task_key(task)
+    return task and task.file_path .. "\0" .. task.line_number or nil
+end
+
+local function publish(buf, view, data)
     local previous = published[buf]
-    if previous and previous.text == text and previous.tick == vim.api.nvim_buf_get_changedtick(buf) then
-        previous.data = data
-        return
-    end
-    local function task_key(line)
-        local path, lnum = require("taskbuffer.util").parse_taskfile_line(line)
-        return path and path .. "\0" .. lnum or nil
-    end
+    local lines = #view.lines > 0 and view.lines or { "" }
+    local unchanged = previous
+        and previous.tick == vim.api.nvim_buf_get_changedtick(buf)
+        and vim.deep_equal(previous.lines, lines)
     local views, selected, locations = {}, {}, {}
     for _, win in ipairs(vim.fn.win_findbuf(buf)) do
         views[win] = vim.api.nvim_win_call(win, vim.fn.winsaveview)
-        local row = views[win].lnum
-        selected[win] = task_key(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or "")
+        selected[win] = previous and task_key(previous.rows[views[win].lnum])
         if selected[win] then
             locations[selected[win]] = {}
         end
     end
-    local lines = vim.split(text, "\n", { plain = true })
-    if lines[#lines] == "" then
-        table.remove(lines)
-    end
     if next(locations) then
-        for row, line in ipairs(lines) do
-            local key = task_key(line)
-            if key and locations[key] then
+        for row, task in pairs(view.rows) do
+            local key = task_key(task)
+            if locations[key] then
                 table.insert(locations[key], row)
             end
         end
     end
-    local modifiable = vim.bo[buf].modifiable
-    vim.bo[buf].modifiable = true
-    vim.bo[buf].readonly = false
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].modified = false
-    vim.bo[buf].readonly = true
-    vim.bo[buf].modifiable = modifiable
-    published[buf] = { text = text, tick = vim.api.nvim_buf_get_changedtick(buf), data = data }
-    for win, view in pairs(views) do
+    if not unchanged then
+        -- Buffer observers may run inside set_lines; expose no stale row map.
+        published[buf] = nil
+        vim.bo[buf].modifiable = true
+        vim.bo[buf].readonly = false
+        local ok, err = pcall(vim.api.nvim_buf_set_lines, buf, 0, -1, false, lines)
+        vim.bo[buf].modified = false
+        vim.bo[buf].readonly = true
+        vim.bo[buf].modifiable = false
+        if not ok then
+            published[buf] = previous
+            error(err)
+        end
+    end
+    -- Replace the complete snapshot even if identical text refers to new tasks.
+    -- No yielding between the text update and publishing its row associations.
+    published[buf] = { lines = lines, rows = view.rows, tick = vim.api.nvim_buf_get_changedtick(buf), data = data }
+    for win, saved in pairs(views) do
         if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
             local row, distance = nil, math.huge
             for _, candidate in ipairs(locations[selected[win]] or {}) do
-                if math.abs(candidate - view.lnum) < distance then
-                    row, distance = candidate, math.abs(candidate - view.lnum)
+                if math.abs(candidate - saved.lnum) < distance then
+                    row, distance = candidate, math.abs(candidate - saved.lnum)
                 end
             end
             if row then
-                -- Date changes can reorder tasks across groups. Keep the same
-                -- task selected so the next shortcut cannot edit its neighbor.
-                view.topline = math.max(1, view.topline + row - view.lnum)
-                view.lnum = row
+                saved.topline = math.max(1, saved.topline + row - saved.lnum)
+                saved.lnum = row
             else
-                view.lnum = math.min(view.lnum, vim.api.nvim_buf_line_count(buf))
+                saved.lnum = math.min(saved.lnum, #lines)
             end
             vim.api.nvim_win_call(win, function()
-                vim.fn.winrestview(view)
+                vim.fn.winrestview(saved)
             end)
         end
     end
 end
 publish = profile.wrap("taskfile.publish", publish)
+
+-- Row numbers belong to this rendered snapshot, never to hidden buffer text.
+function M.task_at(row, buf)
+    buf = buf and buf ~= 0 and buf or vim.api.nvim_get_current_buf()
+    local snapshot = published[buf]
+    if not snapshot or snapshot.tick ~= vim.api.nvim_buf_get_changedtick(buf) then
+        return nil
+    end
+    row = row or vim.api.nvim_win_get_cursor(0)[1]
+    return snapshot.rows[row]
+end
+
+function M.tasks_in_rows(rows)
+    local tasks, seen = {}, {}
+    for _, row in ipairs(rows) do
+        local task = M.task_at(row)
+        local key = task_key(task)
+        if key and not seen[key] then
+            tasks[#tasks + 1] = task
+            seen[key] = true
+        end
+    end
+    return tasks, published[vim.api.nvim_get_current_buf()]
+end
+
+function M.selection_is_current(snapshot)
+    local buf = vim.api.nvim_get_current_buf()
+    return snapshot ~= nil and snapshot == published[buf] and snapshot.tick == vim.api.nvim_buf_get_changedtick(buf)
+end
 
 function M.validate_source(path, lnum)
     local snapshot = published[vim.api.nvim_get_current_buf()]
@@ -198,6 +230,7 @@ function M.validate_source(path, lnum)
     local line_changed = original and require("taskbuffer.util").read_line_from_file(path, lnum) ~= original
     if
         refreshing
+        or (snapshot and snapshot.tick ~= vim.api.nvim_buf_get_changedtick(0))
         or not expected
         or not version
         or line_changed
@@ -228,13 +261,17 @@ function M.release(buf)
     published[buf] = nil
 end
 
--- This is a generated view. Neovim must not treat our async output writes as
--- external edits to a regular file or create swap files for disposable output.
+-- The interactive view lives only in memory. Its task data lives in Lua.
 function M.prepare(buf)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "hide"
     vim.bo[buf].swapfile = false
     vim.bo[buf].readonly = true
+    vim.bo[buf].modifiable = false
+    if vim.api.nvim_get_current_buf() == buf then
+        vim.wo.conceallevel = 0
+        vim.wo.wrap = false
+    end
 end
 
 -- Synchronous compatibility API for scripts only.
@@ -280,7 +317,6 @@ function M.refresh_taskfile_async(callback, opts)
     end
     active = request
     refreshing = true
-    local path, path_err = taskfile_path()
     local span = profile.begin("refresh.async.wall")
     request.span = span
     vim.schedule(function()
@@ -288,7 +324,7 @@ function M.refresh_taskfile_async(callback, opts)
             profile.finish(span)
             return
         end
-        local function complete(text, err, data)
+        local function complete(view, err, data)
             if active ~= request then
                 return
             end
@@ -300,11 +336,7 @@ function M.refresh_taskfile_async(callback, opts)
                 if err then
                     error(err, 0)
                 end
-                local written, write_err = write_taskfile(text or "", path)
-                if not written then
-                    error(write_err, 0)
-                end
-                publish(buf, text or "", data)
+                publish(buf, view, data)
             end)
             active = nil
             refreshing = false
@@ -316,12 +348,8 @@ function M.refresh_taskfile_async(callback, opts)
                 cb(ok and nil or failure)
             end
         end
-        if not path then
-            complete(nil, path_err)
-            return
-        end
         local ok, cancel = pcall(function()
-            return require("taskbuffer.list").list_async(runtime, complete)
+            return require("taskbuffer.list").view_async(runtime, complete)
         end)
         if ok then
             request.cancel = cancel
@@ -348,13 +376,13 @@ end
 
 function M.tasks()
     M.clear_tag_filter()
-    local path, err = taskfile_path()
-    if not path then
-        vim.notify("[taskbuffer] cannot create taskfile: " .. tostring(err), vim.log.levels.ERROR)
-        return
+    local buf = vim.fn.bufnr(view_name)
+    if buf == -1 then
+        buf = vim.api.nvim_create_buf(true, true)
+        vim.api.nvim_buf_set_name(buf, view_name)
     end
-    if vim.api.nvim_buf_get_name(0) ~= path then
-        vim.cmd("edit " .. vim.fn.fnameescape(path))
+    if vim.api.nvim_get_current_buf() ~= buf then
+        vim.cmd("buffer " .. buf)
     end
     M.prepare(vim.api.nvim_get_current_buf())
     if vim.bo.filetype ~= "taskfile" then

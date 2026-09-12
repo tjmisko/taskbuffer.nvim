@@ -73,7 +73,7 @@ option not specified falls back to its default value.
       -- State directory for current task tracking
       state_dir = "~/.local/state/task",
 
-      -- Temp directory for taskfile output
+      -- Output directory for the legacy synchronous script export
       tmpdir = "/tmp",
 
       -- Whether to show undated tasks by default
@@ -323,8 +323,22 @@ Source edits:
     buffer edit its current contents, including unsaved changes, and use normal
     Neovim undo. Save those changes with :write.
     If source files change, run :Tasks and wait for the refresh before acting on
-    a task. Stale task locations are rejected. Generated taskfiles are private to
-    the Neovim session, beneath tmpdir, and removed on normal exit.
+    a task. Stale task locations are rejected.
+
+    :Tasks uses a persistent, readonly scratch buffer named taskbuffer://tasks.
+    Source paths, line numbers, and snapshots are stored in Lua alongside the
+    visible rows. Search and yanks operate on the displayed text; paths are not
+    concealed inside the lines. Opening and refreshing the list write no output
+    file. The taskfile filetype and existing mappings are unchanged.
+
+    The legacy synchronous buffer.refresh_taskfile() script helper still writes
+    serialized output under tmpdir. list.list() and list.list_async() retain the
+    path-prefixed text format for scripts. list.view_async() returns a table
+    {lines, rows} for interactive consumers, plus the source snapshot as the
+    third callback argument (the second is an optional error). Row numbers are
+    1-based; headings and blank rows have no task entry. Treat returned data as
+    immutable. Internal task actions use the published row table, never text
+    parsed from the display.
 
 :Tasks                  Open the taskfile buffer. Clears any active tag
                         filter and refreshes the task list.

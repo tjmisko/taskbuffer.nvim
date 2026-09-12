@@ -13,6 +13,10 @@ Keep tasks in your files. Use Neovim to see and manage them together.
 original note, complete a task, change its due date, or filter the list by tag.
 Taskbuffer also reads tags and due dates from YAML frontmatter.
 
+The task list lives in memory. Source locations are stored in Lua, so searching
+and copying operate on the visible text. Opening or refreshing the list does
+not write a generated file.
+
 [Installation](#installation) · [Usage](#usage) · [Configuration](#configuration) · [Help](#help-and-contributing)
 
 ## Requirements

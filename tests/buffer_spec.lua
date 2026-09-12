@@ -31,8 +31,12 @@ describe("async taskfile buffers", function()
         original_list = package.loaded["taskbuffer.list"]
         package.loaded["taskbuffer.list"] = {
             invalidate = function() end,
-            list_async = function(opts, cb)
-                local request = { opts = opts, cb = cb, cancelled = false }
+            view_async = function(opts, cb)
+                local request = { opts = opts, cancelled = false }
+                request.cb = function(text, err, rows)
+                    local lines = text and vim.split(text:gsub("\n$", ""), "\n", { plain = true })
+                    cb(lines and { lines = lines, rows = rows or {} }, err)
+                end
                 requests[#requests + 1] = request
                 return function()
                     request.cancelled = true
@@ -138,10 +142,8 @@ describe("async taskfile buffers", function()
         vim.cmd("close!")
     end)
 
-    it("reuses the buffer when tmpdir is reached through a symlink", function()
-        local alias = dir .. "/alias"
-        assert(vim.uv.fs_symlink(dir, alias))
-        require("taskbuffer.config").values.tmpdir = alias
+    it("reuses the buffer independently of the export directory", function()
+        require("taskbuffer.config").values.tmpdir = dir .. "/does-not-exist"
         buffer.tasks()
         wait_for(1)
         requests[1].cb("# Today\nA task\n")
@@ -169,11 +171,16 @@ describe("async taskfile buffers", function()
     end)
 
     it("follows each window's selected task when date groups reorder", function()
-        local first = dir .. "/notes.md:1:1:\t First task"
-        local second = dir .. "/notes.md:2:1:\t Second task"
+        local first, second = "First task", "Second task"
+        local first_task = { file_path = dir .. "/notes.md", line_number = 1 }
+        local second_task = { file_path = dir .. "/notes.md", line_number = 2 }
         buffer.tasks()
         wait_for(1)
-        requests[1].cb(table.concat({ "# Today", first, "# Tomorrow", second }, "\n"))
+        requests[1].cb(
+            table.concat({ "# Today", first, "# Tomorrow", second }, "\n"),
+            nil,
+            { [2] = first_task, [4] = second_task }
+        )
         local first_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_cursor(first_win, { 2, 3 })
         vim.cmd("split")
@@ -181,14 +188,67 @@ describe("async taskfile buffers", function()
         vim.api.nvim_win_set_cursor(second_win, { 4, 5 })
         buffer.refresh_view()
         wait_for(2)
-        requests[2].cb(table.concat({ "# Tomorrow", second, "# Later", first }, "\n"))
+        requests[2].cb(
+            table.concat({ "# Tomorrow", second, "# Later", first }, "\n"),
+            nil,
+            { [2] = second_task, [4] = first_task }
+        )
         assert.are.same({ 4, 3 }, vim.api.nvim_win_get_cursor(first_win))
         assert.are.same({ 2, 5 }, vim.api.nvim_win_get_cursor(second_win))
         assert.are.equal(second_win, vim.api.nvim_get_current_win())
         vim.cmd("close")
     end)
 
-    it("recovers from scan and write failures without clearing existing output", function()
+    it("replaces row metadata even when the displayed text is identical", function()
+        local a = { file_path = dir .. "/a.md", line_number = 1 }
+        local b = { file_path = dir .. "/b.md", line_number = 5 }
+        buffer.tasks()
+        wait_for(1)
+        requests[1].cb("Identical task\n", nil, { [1] = a })
+        local tick = vim.api.nvim_buf_get_changedtick(0)
+        assert.are.equal(a, buffer.task_at(1))
+        local selected, snapshot = buffer.tasks_in_rows({ 1, 1 })
+        assert.are.same({ a }, selected)
+        assert.is_true(buffer.selection_is_current(snapshot))
+        buffer.refresh_view()
+        wait_for(2)
+        requests[2].cb("Identical task\n", nil, { [1] = b })
+        assert.are.equal(tick, vim.api.nvim_buf_get_changedtick(0))
+        assert.are.equal(b, buffer.task_at(1))
+        assert.is_false(buffer.selection_is_current(snapshot))
+    end)
+
+    it("invalidates row metadata during text replacement and after external buffer edits", function()
+        local a = { file_path = dir .. "/a.md", line_number = 1 }
+        buffer.tasks()
+        wait_for(1)
+        requests[1].cb("A task\n", nil, { [1] = a })
+        local observed = false
+        vim.api.nvim_buf_attach(0, false, {
+            on_lines = function()
+                observed = true
+                assert.is_nil(buffer.task_at(1))
+                return true
+            end,
+        })
+        buffer.refresh_view()
+        wait_for(2)
+        requests[2].cb("Updated task\n", nil, { [1] = a })
+        assert.is_true(observed)
+        assert.are.equal(a, buffer.task_at(1))
+        vim.bo.modifiable = true
+        vim.bo.readonly = false
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "Forged task" })
+        assert.is_nil(buffer.task_at(1))
+        buffer.refresh_view()
+        wait_for(3)
+        requests[3].cb("", nil, {})
+        assert.are.same({ "" }, vim.api.nvim_buf_get_lines(0, 0, -1, false))
+        assert.is_nil(buffer.task_at(1))
+        assert.is_false(vim.bo.modifiable)
+    end)
+
+    it("recovers from scan failures without clearing existing output", function()
         buffer.tasks()
         wait_for(1)
         requests[1].cb("existing\n")
@@ -199,13 +259,6 @@ describe("async taskfile buffers", function()
         requests[2].cb(nil, "scan failed")
         assert.is_false(buffer.get_refreshing())
         assert.are.equal("existing", text())
-        -- A directory at the output filename exercises a write failure.
-        local output = vim.api.nvim_buf_get_name(0)
-        vim.fn.delete(output)
-        vim.fn.mkdir(output)
-        buffer.refresh_and_restore_cursor()
-        wait_for(3)
-        requests[3].cb("replacement\n")
         vim.notify = notify
         assert.is_false(buffer.get_refreshing())
         assert.are.equal("existing", text())

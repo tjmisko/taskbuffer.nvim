@@ -79,7 +79,7 @@ local function build_tasks(ctx, matches, projects, tags_only)
 end
 build_tasks = profile.wrap("tasks.build", build_tasks)
 
-local function render(ctx, data)
+local function render(ctx, data, view)
     if data.errors and #data.errors > 0 then
         local messages = {}
         for _, err in ipairs(data.errors) do
@@ -88,9 +88,9 @@ local function render(ctx, data)
         end
         return nil, table.concat(messages, "\n")
     end
-    local view_key = vim.json.encode({ ctx.now, ctx.markers, ctx.ignore_undated, ctx.tags })
+    local view_key = vim.json.encode({ ctx.now, ctx.markers, ctx.ignore_undated, ctx.tags, view == true })
     if data.view_key == view_key then
-        return data.text
+        return data.rendered
     end
     local open = {}
     for _, task in ipairs(data.tasks) do
@@ -99,7 +99,7 @@ local function render(ctx, data)
             open[#open + 1] = task
         end
     end
-    local text = profile.measure("format", format.format_taskfile, open, ctx.now, {
+    local output = profile.measure("format", view and format.format_view or format.format_taskfile, open, ctx.now, {
         markers = ctx.markers,
         ignore_undated = ctx.ignore_undated,
         tag_filter = ctx.tags,
@@ -109,8 +109,8 @@ local function render(ctx, data)
         overlap = ctx.horizons_overlap,
         date_strftime = ctx.date_fmt,
     })
-    data.view_key, data.text = view_key, text
-    return text
+    data.view_key, data.rendered = view_key, output
+    return output
 end
 render = profile.wrap("render", render)
 
@@ -273,7 +273,7 @@ function M.list_async(opts, cb)
             return
         end
         cancel_render = async.run(function()
-            return render(ctx, data)
+            return render(ctx, data, opts.view)
         end, function(text, failure)
             finish(text, failure, data)
         end)
@@ -301,6 +301,11 @@ function M.list_async(opts, cb)
         end
         profile.finish(span)
     end
+end
+
+-- Interactive consumers receive visible lines and row metadata together.
+function M.view_async(opts, cb)
+    return M.list_async(vim.tbl_extend("force", opts or {}, { view = true }), cb)
 end
 
 function M.tags_async(opts, cb)

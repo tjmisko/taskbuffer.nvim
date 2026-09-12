@@ -33,7 +33,7 @@ end
 ---@param edits UndoEdit[]
 local function flash_edits(edits)
     local buf = vim.api.nvim_get_current_buf()
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local buffer = require("taskbuffer.buffer")
     local ns = vim.api.nvim_create_namespace("taskbuffer_undo_flash")
 
     -- Build a set of filepath:linenumber keys from the edits
@@ -42,10 +42,10 @@ local function flash_edits(edits)
         edit_keys[edit.filepath .. ":" .. edit.linenumber] = true
     end
 
-    for i, line in ipairs(lines) do
-        local ok, filepath, linenumber = pcall(util.parse_taskfile_line, line)
-        if ok and filepath and linenumber then
-            if edit_keys[filepath .. ":" .. linenumber] then
+    for i = 1, vim.api.nvim_buf_line_count(buf) do
+        local task = buffer.task_at(i, buf)
+        if task then
+            if edit_keys[task.file_path .. ":" .. task.line_number] then
                 vim.api.nvim_buf_add_highlight(buf, ns, "Search", i - 1, 0, -1)
             end
         end

@@ -19,14 +19,14 @@ function M.register()
     -- Discard changes on buffer leave
     vim.api.nvim_create_autocmd({ "BufLeave", "QuitPre" }, {
         group = augroup,
-        pattern = "*taskfile",
+        pattern = { "*.taskfile", "taskbuffer://*" },
         callback = discard_changes,
     })
 
     -- No global polling or source scans: refresh only while a taskfile is shown.
     vim.api.nvim_create_autocmd("BufEnter", {
         group = augroup,
-        pattern = "*taskfile",
+        pattern = { "*.taskfile", "taskbuffer://*" },
         callback = function(event)
             local buffer = require("taskbuffer.buffer")
             buffer.prepare(event.buf)
@@ -35,7 +35,7 @@ function M.register()
     })
     vim.api.nvim_create_autocmd({ "BufHidden", "BufWipeout" }, {
         group = augroup,
-        pattern = "*taskfile",
+        pattern = { "*.taskfile", "taskbuffer://*" },
         callback = function(event)
             local tags = package.loaded["taskbuffer.tags"]
             if tags then

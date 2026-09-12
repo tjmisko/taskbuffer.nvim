@@ -62,7 +62,7 @@
 
 ---@class TaskbufferConfig
 ---@field state_dir string directory for task state files
----@field tmpdir string directory for temporary taskfile output
+---@field tmpdir string directory for legacy synchronous taskfile exports
 ---@field show_undated boolean whether to show undated tasks by default
 ---@field sources string[] directories or glob patterns to scan
 ---@field annotations table[] opt-in code annotation rules {extension, search, pattern}

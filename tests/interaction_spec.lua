@@ -74,22 +74,37 @@ describe("editor interactions", function()
         assert.is_true(editor.lua("return vim.bo.readonly and not vim.bo.modified and not vim.bo.swapfile"))
     end)
 
-    it("keeps source prefixes concealed while entering forward and backward searches", function()
+    it("searches visible text without horizontal scrolling from long source paths", function()
+        local folder = editor.root .. "/vault/" .. string.rep("hidden_filename_", 12)
+        vim.fn.mkdir(folder, "p")
+        local path = folder .. "/private_location.md"
+        vim.fn.writefile({ "- [ ] Merge sorted lists #code", "- [ ] Merge another list #code" }, path)
+        editor.command("set columns=80 lines=20")
         editor.command("syntax enable")
         editor.command("set incsearch")
         editor.command("Tasks")
-        ready_tasks("Example task")
-        editor.input("G")
-        editor.wait("return vim.api.nvim_get_current_line():find('Example task',1,true) ~= nil", "task not selected")
-        for _, search in ipairs({ "/Example", "?Example" }) do
+        ready_tasks("Merge sorted lists")
+        editor.input("gg")
+        editor.wait("return vim.api.nvim_win_get_cursor(0)[1] == 1", "top of list")
+        for _, search in ipairs({ "/Merge", "?Merge" }) do
             editor.input(search)
             editor.wait("return vim.api.nvim_get_mode().mode == 'c'", "search did not open")
-            assert.is_truthy(editor.lua("return vim.wo.concealcursor:find('c',1,true)"))
-            assert.are.equal(2, editor.lua("return vim.wo.conceallevel"))
-            assert.are.equal(1, editor.lua("return vim.fn.synconcealed(vim.fn.line('.'), 1)[1]"))
-            editor.input("<Esc>")
+            assert.are.equal(0, editor.lua("return vim.fn.winsaveview().leftcol"))
+            assert.are.equal(0, editor.lua("return vim.wo.conceallevel"))
+            editor.input("<CR>")
             editor.wait("return vim.api.nvim_get_mode().mode == 'n'", "search did not close")
+            assert.is_truthy(editor.lua("return vim.api.nvim_get_current_line():find('Merge',1,true)"))
+            for _, next_match in ipairs({ "n", "N" }) do
+                editor.input(next_match)
+                editor.wait("return vim.api.nvim_get_current_line():find('Merge',1,true) ~= nil", "next search result")
+                assert.are.equal(0, editor.lua("return vim.fn.winsaveview().leftcol"))
+            end
         end
+        assert.are.equal(0, editor.lua("return vim.fn.search('hidden_filename', 'nw')"))
+        assert.is_nil(table.concat(editor.lines()):find(path, 1, true))
+        editor.input("yy")
+        editor.wait("return vim.fn.getreg('\"'):find('Merge',1,true) ~= nil", "yank did not copy the visible task")
+        assert.is_nil(editor.lua("return vim.fn.getreg('\"')"):find(path, 1, true))
     end)
 
     it("delivers checkbox changes to renderers when marking a saved task irrelevant", function()
@@ -218,6 +233,83 @@ describe("editor interactions", function()
             assert.are.equal(neighbor, vim.fn.readfile(editor.path)[2])
         end
         editor.no_warnings()
+    end)
+
+    it("acts on the selected source when two tasks have identical visible text", function()
+        local other = editor.root .. "/vault/z.md"
+        vim.fn.writefile({ "- [ ] Identical task" }, editor.path)
+        vim.fn.writefile({ "# Another source", "- [ ] Identical task" }, other)
+        editor.command("Tasks")
+        ready_tasks("Identical task")
+        assert.are.equal(editor.lines()[2], editor.lines()[3])
+        editor.input("G<Space>ti")
+        editor.wait("return vim.fn.readfile(...)[2]:find('- [-]',1,true) ~= nil", "wrong duplicate was edited", other)
+        assert.are.same({ "- [ ] Identical task" }, vim.fn.readfile(editor.path))
+        ready_tasks("Identical task")
+        editor.no_warnings()
+    end)
+
+    it("uses Lua locations for visual date edits, undo/redo, and quickfix across sources", function()
+        local other = editor.root .. "/vault/z.md"
+        local original = "- [ ] Identical task (@[[2026-02-17]])"
+        vim.fn.writefile({ original }, editor.path)
+        vim.fn.writefile({ "# Second source", original }, other)
+        editor.command("Tasks")
+        ready_tasks("Identical task")
+        local function date_is(date)
+            editor.wait(
+                [[
+                local a,b,date = ...
+                return vim.fn.readfile(a)[1]:find(date,1,true) ~= nil
+                    and vim.fn.readfile(b)[2]:find(date,1,true) ~= nil
+            ]],
+                "selected sources did not receive the date",
+                editor.path,
+                other,
+                date
+            )
+            ready_tasks("Identical task")
+        end
+        editor.input("ggVG<M-Right>")
+        date_is("2026-02-18")
+        editor.input("u")
+        date_is("2026-02-17")
+        editor.wait(
+            [[
+            local ns = vim.api.nvim_create_namespace('taskbuffer_undo_flash')
+            return #vim.api.nvim_buf_get_extmarks(0,ns,0,-1,{}) == 2
+        ]],
+            "undo did not highlight the source tasks"
+        )
+        editor.input("<C-r>")
+        date_is("2026-02-18")
+        editor.input("ggVG<C-t>")
+        date_is(os.date("%Y-%m-%d"))
+        editor.input("ggVG<M-C-q>")
+        editor.wait("return vim.bo.filetype == 'qf' and #vim.fn.getqflist() == 2", "quickfix selection did not open")
+        local items = editor.lua([[
+            local out = {}
+            for _, item in ipairs(vim.fn.getqflist()) do
+                out[#out+1] = {vim.api.nvim_buf_get_name(item.bufnr), item.lnum, item.text}
+            end
+            return out
+        ]])
+        assert.are.same({ { editor.path, 1, "Identical task" }, { other, 2, "Identical task" } }, items)
+        editor.no_warnings()
+    end)
+
+    it("rejects a stale source before applying any edits in a visual selection", function()
+        local other = editor.root .. "/vault/z.md"
+        local original = "- [ ] Identical task (@[[2026-02-17]])"
+        vim.fn.writefile({ original }, editor.path)
+        vim.fn.writefile({ original }, other)
+        editor.command("Tasks")
+        ready_tasks("Identical task")
+        vim.fn.writefile({ "Inserted heading", original }, other)
+        editor.input("ggVG<M-Right>")
+        editor.wait("return #_G.test_warnings > 0", "stale selection was not rejected")
+        assert.are.same({ original }, vim.fn.readfile(editor.path))
+        assert.are.same({ "Inserted heading", original }, vim.fn.readfile(other))
     end)
 
     it("marks an edited and moved task irrelevant, with one native undo step", function()
@@ -357,8 +449,9 @@ describe("editor interactions", function()
         editor.lua(
             [[
             local path = ...
-            for i, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
-                if line:find(path .. ':1:', 1, true) then vim.api.nvim_win_set_cursor(0, {i, 0}); return end
+            for i in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+                local task = require('taskbuffer.buffer').task_at(i)
+                if task and task.file_path == path and task.line_number == 1 then vim.api.nvim_win_set_cursor(0, {i, 0}); return end
             end
             error('missing source task')
         ]],

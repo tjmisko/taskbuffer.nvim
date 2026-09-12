@@ -11,7 +11,7 @@ of warnings.
 
 | User behavior | Automated check | Location |
 | --- | --- | --- |
-| Open, refresh, and reopen taskbuffer | Real scanner and output writes; check native warnings, error messages, readonly state, and unchanged buffer identity | `tests/interaction_spec.lua` |
+| Open, refresh, and reopen taskbuffer | Real scanner and Lua row snapshots; check native warnings, error messages, readonly state, and unchanged buffer identity | `tests/interaction_spec.lua` |
 | Load through native or lazy.nvim installation | Tasks appear without W10 or other native warnings; generated buffer stays readonly, unmodified, and without swap | `tests/install_init.lua` |
 | Mark the current task irrelevant while editing | Type unsaved text, move the task by inserting a heading, press the mapped keys, and check the edited buffer and unchanged disk | `tests/interaction_spec.lua` |
 | Undo or unset the task action | One `u` restores the task while keeping earlier typing; `<C-r>` restores the whole action; `<leader>tu` removes the irrelevant status | `tests/interaction_spec.lua` |
@@ -20,6 +20,10 @@ of warnings.
 | Use related task and date shortcuts | Drive complete, check-off, defer, inline dates, and frontmatter dates through their key mappings; verify undo and preservation of unsaved text | `tests/interaction_spec.lua` |
 | Protect a dirty source while using the aggregate view | Reject the disk-based action, preserve both versions, then navigate to the source and successfully edit it there | `tests/interaction_spec.lua` |
 | Cancel, coalesce, or finish an async refresh in another window | Controlled async callbacks verify focus, stale-result rejection, unchanged output, and failure recovery | `tests/buffer_spec.lua` |
+| Search and copy with long source paths | `/`, `?`, `n`, `N`, and yanks see only visible text; filename-only searches cannot match hidden metadata | `tests/interaction_spec.lua` |
+| Act on identical-looking tasks | Select the correct source; exercise visual dates, undo/redo, and quickfix across files | `tests/interaction_spec.lua` |
+| Refresh identical text with different source locations | Replace row metadata without changing buffer text or changedtick; invalidate associations during replacement or unexpected edits | `tests/buffer_spec.lua` |
+| Preserve script compatibility | Serialized output retains path prefixes; native views use separate cached lines and row metadata | `tests/unit/format_spec.lua`, `tests/unit/list_spec.lua`, `tests/unit/view_spec.lua` |
 | Fail partway through a source operation | Verify staged changes are discarded, buffer routing is reset, and file bytes/metadata remain intact | `tests/unit/source_spec.lua` |
 
 The interaction suite starts a separate Neovim for every case. It sends real

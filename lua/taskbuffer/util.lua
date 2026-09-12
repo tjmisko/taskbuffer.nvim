@@ -29,16 +29,16 @@ function M.check_source(path)
 end
 
 -- Reject stale task locations and unsaved source buffers before any mutation.
-function M.taskfile_location(line)
-    local path, lnum = M.parse_taskfile_line(line)
-    if not path or not M.check_source(path) then
-        return nil, nil
-    end
+function M.taskfile_location(row)
     local buffer = require("taskbuffer.buffer")
-    if buffer.validate_source and not buffer.validate_source(path, lnum) then
+    local task = buffer.task_at(row)
+    if not task or not M.check_source(task.file_path) then
         return nil, nil
     end
-    return path, lnum
+    if not buffer.validate_source(task.file_path, task.line_number) then
+        return nil, nil
+    end
+    return task.file_path, task.line_number
 end
 
 function M.replace_line_in_file(path, target, content)
@@ -261,6 +261,28 @@ function M.get_visual_lines()
         return {}
     end
     return vim.api.nvim_buf_get_lines(0, s_line - 1, e_line, false)
+end
+
+-- Capture row numbers before leaving Visual mode; duplicate visible text may
+-- refer to different tasks, so text itself cannot identify a selection.
+function M.get_visual_rows()
+    local first, last = vim.fn.line("v"), vim.fn.line(".")
+    if first > last then
+        first, last = last, first
+    end
+    local rows = {}
+    for row = math.max(1, first), last do
+        rows[#rows + 1] = row
+    end
+    return rows
+end
+
+function M.tasks_to_qf(tasks)
+    local items = {}
+    for _, task in ipairs(tasks) do
+        items[#items + 1] = { filename = task.file_path, lnum = task.line_number, col = 1, text = task.body }
+    end
+    return items
 end
 
 --- Find the frontmatter due date line in a file.

@@ -113,6 +113,44 @@ local function lpad(s, w)
     return string.rep(" ", math.max(0, w - #s)) .. s
 end
 
+local function append_metadata(parts, task, opts)
+    -- 6. Tags.
+    if task.tags ~= nil and #task.tags > 0 then
+        local prefix = opts.tag_prefix
+        if prefix == nil or prefix == "" then
+            prefix = "#"
+        end
+        parts[#parts + 1] = " "
+        for i, tag in ipairs(task.tags) do
+            if i > 1 then
+                parts[#parts + 1] = " "
+            end
+            parts[#parts + 1] = prefix
+            parts[#parts + 1] = tag
+        end
+    end
+
+    -- 7. Markers (only when requested).
+    if opts.markers and task.markers ~= nil and #task.markers > 0 then
+        local mprefix = opts.marker_prefix
+        if mprefix == nil or mprefix == "" then
+            mprefix = "::"
+        end
+        for _, m in ipairs(task.markers) do
+            parts[#parts + 1] = " "
+            parts[#parts + 1] = mprefix
+            parts[#parts + 1] = m.kind
+            parts[#parts + 1] = " [["
+            parts[#parts + 1] = m.date
+            parts[#parts + 1] = "]]"
+            if m.time ~= nil and m.time ~= "" then
+                parts[#parts + 1] = " "
+                parts[#parts + 1] = m.time
+            end
+        end
+    end
+end
+
 --- Format one task into its byte-exact taskfile line (no trailing newline).
 ---@param task table
 ---@param opts FormatOpts
@@ -156,42 +194,31 @@ function M.format_task_line(task, opts)
     -- 5. Body.
     parts[#parts + 1] = string.format("\t %s \t", task.body)
 
-    -- 6. Tags.
-    if task.tags ~= nil and #task.tags > 0 then
-        local prefix = opts.tag_prefix
-        if prefix == nil or prefix == "" then
-            prefix = "#"
-        end
-        parts[#parts + 1] = " "
-        for i, tag in ipairs(task.tags) do
-            if i > 1 then
-                parts[#parts + 1] = " "
-            end
-            parts[#parts + 1] = prefix
-            parts[#parts + 1] = tag
-        end
-    end
+    append_metadata(parts, task, opts)
 
-    -- 7. Markers (only when requested).
-    if opts.markers and task.markers ~= nil and #task.markers > 0 then
-        local mprefix = opts.marker_prefix
-        if mprefix == nil or mprefix == "" then
-            mprefix = "::"
-        end
-        for _, m in ipairs(task.markers) do
-            parts[#parts + 1] = " "
-            parts[#parts + 1] = mprefix
-            parts[#parts + 1] = m.kind
-            parts[#parts + 1] = " [["
-            parts[#parts + 1] = m.date
-            parts[#parts + 1] = "]]"
-            if m.time ~= nil and m.time ~= "" then
-                parts[#parts + 1] = " "
-                parts[#parts + 1] = m.time
-            end
-        end
-    end
+    return table.concat(parts)
+end
 
+local function pad(text, width, right)
+    local spaces = string.rep(" ", math.max(0, width - vim.fn.strdisplaywidth(text)))
+    return right and spaces .. text or text .. spaces
+end
+
+-- The interactive view contains only visible text. Source locations stay in
+-- the row table; no concealed prefixes, tabs, or date wrappers are needed.
+function M.format_task_text(task, opts)
+    opts = opts or {}
+    local date = task.due_date and strftime.format_epoch(task.due_date, opts.date_strftime or "%Y-%m-%d") or ""
+    local parts = {
+        pad(date, 10),
+        " | ",
+        pad(task.due_time or "", 5),
+        " | ",
+        pad(task.duration or "", 4, true),
+        " | ",
+        task.body,
+    }
+    append_metadata(parts, task, opts)
     return table.concat(parts)
 end
 
@@ -210,12 +237,17 @@ function M.task_matches_tags(task, tags)
     return false
 end
 
---- Format the full taskfile string from a list of canonical Task tables.
+---@class TaskbufferView
+---@field lines string[] visible buffer lines
+---@field rows table<integer, Task> 1-based row associations (no entries for headings)
+
+--- Group and sort tasks once for either the native view or script export.
 ---@param tasks table[]|nil
 ---@param now integer        -- local-noon epoch for "now" (default horizon resolution)
 ---@param opts FormatOpts|nil
----@return string
-function M.format_taskfile(tasks, now, opts)
+---@param render_line fun(task: Task, opts: FormatOpts): string
+---@return TaskbufferView
+local function render_rows(tasks, now, opts, render_line)
     tasks = tasks or {}
     opts = opts or {}
 
@@ -295,7 +327,7 @@ function M.format_taskfile(tasks, now, opts)
         overlap = "sorted"
     end
 
-    local out = {}
+    local lines, rows = {}, {}
     local interval = 1
     local last_interval = nil
 
@@ -318,15 +350,14 @@ function M.format_taskfile(tasks, now, opts)
 
         if interval ~= last_interval then
             if last_interval ~= nil then
-                out[#out + 1] = "\n" -- blank line between buckets
+                lines[#lines + 1] = "" -- blank line between buckets
             end
-            out[#out + 1] = dated_horizons[interval].label
-            out[#out + 1] = "\n"
+            lines[#lines + 1] = dated_horizons[interval].label
             last_interval = interval
         end
 
-        out[#out + 1] = M.format_task_line(t, opts)
-        out[#out + 1] = "\n"
+        lines[#lines + 1] = render_line(t, opts)
+        rows[#lines] = t
     end
 
     -- Undated section.
@@ -336,19 +367,28 @@ function M.format_taskfile(tasks, now, opts)
     end
 
     if #undated > 0 and not opts.ignore_undated then
-        if #out > 0 then
-            out[#out + 1] = "\n"
+        if #lines > 0 then
+            lines[#lines + 1] = ""
         end
-        out[#out + 1] = undated_label
-        out[#out + 1] = "\n"
+        lines[#lines + 1] = undated_label
         for _, t in ipairs(undated) do
             async.checkpoint()
-            out[#out + 1] = M.format_task_line(t, opts)
-            out[#out + 1] = "\n"
+            lines[#lines + 1] = render_line(t, opts)
+            rows[#lines] = t
         end
     end
 
-    return table.concat(out, "")
+    return { lines = lines, rows = rows }
+end
+
+-- Preserve the serialized format for existing scripts and exports.
+function M.format_taskfile(tasks, now, opts)
+    local view = render_rows(tasks, now, opts, M.format_task_line)
+    return #view.lines > 0 and table.concat(view.lines, "\n") .. "\n" or ""
+end
+
+function M.format_view(tasks, now, opts)
+    return render_rows(tasks, now, opts, M.format_task_text)
 end
 
 return M

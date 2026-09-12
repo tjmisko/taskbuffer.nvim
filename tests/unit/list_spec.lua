@@ -76,6 +76,31 @@ describe("async listing and source snapshots", function()
         end, 5))
     end)
 
+    it("keeps native row metadata separate from cached script output and filtered views", function()
+        write("a.md", { "- [ ] Same task #work", "- [ ] Other task #home" })
+        local function view(opts)
+            local done, result, failure = false
+            list.view_async(opts or {}, function(value, err)
+                result, failure, done = value, err, true
+            end)
+            assert.is_true(vim.wait(3000, function()
+                return done
+            end, 5))
+            assert.is_nil(failure)
+            return result
+        end
+        local first = view()
+        assert.are.equal(dir .. "/a.md", first.rows[2].file_path)
+        assert.are.equal(1, first.rows[2].line_number)
+        assert.is_nil(table.concat(first.lines):find(dir, 1, true))
+        local script = wait_list({ reuse = true })
+        assert.is_truthy(script:find(dir .. "/a.md:1:1:", 1, true))
+        local filtered = view({ reuse = true, tags = { "home" } })
+        assert.are.equal(2, filtered.rows[2].line_number)
+        assert.are.equal(1, first.rows[2].line_number)
+        assert.is_nil(filtered.rows[3])
+    end)
+
     it("preserves sync output for frontmatter, horizons, markers, filters, and strict errors", function()
         write("project.md", {
             "---",

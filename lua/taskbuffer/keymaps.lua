@@ -51,23 +51,22 @@ end
 --- Bulk-shift due dates for multiple taskfile lines.
 --- Groups edits by source file and processes from bottom-up to avoid line drift.
 --- Falls back to frontmatter due date for undated tasks (deduplicated per file).
----@param lines string[]
+---@param tasks table[]
 ---@param days integer
-local function shift_task_dates_bulk(lines, days)
-    for _, line in ipairs(lines) do
-        local path = util.parse_taskfile_line(line)
-        if path and not util.taskfile_location(line) then
+local function shift_task_dates_bulk(tasks, days)
+    local buffer = require("taskbuffer.buffer")
+    for _, task in ipairs(tasks) do
+        if not util.check_source(task.file_path) or not buffer.validate_source(task.file_path, task.line_number) then
             return
         end
     end
-    local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
     local edits_by_file = {}
     local all_edits = {}
     local shifted = 0
     local fm_shifted_files = {} -- track FM edits to deduplicate per file
-    for _, line in ipairs(lines) do
-        local filepath, linenumber = util.parse_taskfile_line(line)
+    for _, task in ipairs(tasks) do
+        local filepath, linenumber = task.file_path, task.line_number
         if filepath and linenumber then
             local source_line = util.read_line_from_file(filepath, linenumber)
             if source_line then
@@ -125,8 +124,7 @@ end
 
 --- Get filepath and linenumber from a taskfile line.
 local function get_task_location_from_taskfile()
-    local line = vim.fn.getline(".")
-    return util.taskfile_location(line)
+    return util.taskfile_location()
 end
 
 local function get_task_location_from_current_buffer()
@@ -138,10 +136,8 @@ end
 local function shift_task_date_in_taskfile(days)
     local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
-    local line = vim.api.nvim_get_current_line()
-    local filepath, linenumber = util.taskfile_location(line)
+    local filepath, linenumber = util.taskfile_location()
     if not filepath or not linenumber then
-        vim.notify("[taskbuffer] could not parse taskfile line", vim.log.levels.WARN)
         return
     end
     local source_line = util.read_line_from_file(filepath, linenumber)
@@ -191,22 +187,21 @@ end
 
 --- Bulk-set due dates to today for multiple taskfile lines.
 --- Falls back to frontmatter due date for undated tasks (deduplicated per file).
----@param lines string[]
-local function set_task_dates_today_bulk(lines)
-    for _, line in ipairs(lines) do
-        local path = util.parse_taskfile_line(line)
-        if path and not util.taskfile_location(line) then
+---@param tasks table[]
+local function set_task_dates_today_bulk(tasks)
+    local buffer = require("taskbuffer.buffer")
+    for _, task in ipairs(tasks) do
+        if not util.check_source(task.file_path) or not buffer.validate_source(task.file_path, task.line_number) then
             return
         end
     end
-    local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
     local edits_by_file = {}
     local all_edits = {}
     local updated = 0
     local fm_set_files = {} -- track FM edits to deduplicate per file
-    for _, line in ipairs(lines) do
-        local filepath, linenumber = util.parse_taskfile_line(line)
+    for _, task in ipairs(tasks) do
+        local filepath, linenumber = task.file_path, task.line_number
         if filepath and linenumber then
             local source_line = util.read_line_from_file(filepath, linenumber)
             if source_line then
@@ -259,10 +254,8 @@ end
 local function set_date_today_in_taskfile()
     local buffer = require("taskbuffer.buffer")
     local cfg = get_config()
-    local line = vim.api.nvim_get_current_line()
-    local filepath, linenumber = util.taskfile_location(line)
+    local filepath, linenumber = util.taskfile_location()
     if not filepath or not linenumber then
-        vim.notify("[taskbuffer] could not parse taskfile line", vim.log.levels.WARN)
         return
     end
     local source_line = util.read_line_from_file(filepath, linenumber)
@@ -387,6 +380,17 @@ function M.global_action(verb)
     end
 end
 
+local function visual_tasks()
+    local buffer = require("taskbuffer.buffer")
+    local tasks, snapshot = buffer.tasks_in_rows(util.get_visual_rows())
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+    if not buffer.selection_is_current(snapshot) then
+        vim.notify("[taskbuffer] task list changed; select the tasks again", vim.log.levels.WARN)
+        return nil
+    end
+    return tasks
+end
+
 function M.attach_taskfile()
     map("n", "taskfile", "start_task", function()
         local filepath, linenumber = get_task_location_from_taskfile()
@@ -411,10 +415,11 @@ function M.attach_taskfile()
     end, { buffer = true, desc = "Start task" })
 
     local function go_to_file()
-        local filepath, linenumber = util.parse_taskfile_line(vim.api.nvim_get_current_line())
-        if not filepath then
+        local task = require("taskbuffer.buffer").task_at()
+        if not task then
             return
         end
+        local filepath, linenumber = task.file_path, task.line_number
         vim.cmd("edit " .. vim.fn.fnameescape(filepath))
         vim.api.nvim_win_set_cursor(0, { math.min(linenumber, vim.api.nvim_buf_line_count(0)), 0 })
         vim.cmd("normal! zz")
@@ -483,29 +488,37 @@ function M.attach_taskfile()
     end, { buffer = true, desc = "Set task date to today" })
 
     map("v", "taskfile", "set_date_today", function()
-        local lines = util.get_visual_lines()
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-        set_task_dates_today_bulk(lines)
+        local tasks = visual_tasks()
+        if not tasks then
+            return
+        end
+        set_task_dates_today_bulk(tasks)
     end, { buffer = true, desc = "Set selected task dates to today" })
 
     map("v", "taskfile", "shift_date_back", function()
         local count = vim.v.count1
-        local lines = util.get_visual_lines()
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-        shift_task_dates_bulk(lines, -count)
+        local tasks = visual_tasks()
+        if not tasks then
+            return
+        end
+        shift_task_dates_bulk(tasks, -count)
     end, { buffer = true, desc = "Shift selected task dates back" })
 
     map("v", "taskfile", "shift_date_forward", function()
         local count = vim.v.count1
-        local lines = util.get_visual_lines()
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-        shift_task_dates_bulk(lines, count)
+        local tasks = visual_tasks()
+        if not tasks then
+            return
+        end
+        shift_task_dates_bulk(tasks, count)
     end, { buffer = true, desc = "Shift selected task dates forward" })
 
     map("v", "taskfile", "quickfix", function()
-        local lines = util.get_visual_lines()
-        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
-        local qf_list = util.taskfile_lines_to_qf(lines)
+        local tasks = visual_tasks()
+        if not tasks then
+            return
+        end
+        local qf_list = util.tasks_to_qf(tasks)
         if #qf_list == 0 then
             vim.notify("[taskbuffer] no tasks in selection", vim.log.levels.WARN)
             return
