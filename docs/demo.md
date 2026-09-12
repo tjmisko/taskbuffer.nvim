@@ -1,6 +1,6 @@
 # Recording the usage demo
 
-The demo runs in a dedicated WezTerm window with a disposable Markdown vault,
+The demo runs in a dedicated WezTerm window with disposable note directories and a Rust project,
 a clean Neovim configuration, scene captions, and a display of the keys typed.
 It uses this checkout of taskbuffer. Your regular Neovim configuration and notes
 are not loaded.
@@ -38,12 +38,21 @@ F5 does nothing during playback; use F8 first to restart. F6 pauses the keys,
 while OBS continues recording. Avoid other typing during a take. Between takes,
 you can explore the sample vault normally. F5 discards those sample edits.
 
-The sequence targets a 60–90 second overview: open the list, filter by tag,
-move a due date forward and back, and use Ctrl-t to set it to today. It then
-opens a source, edits an unsaved task, marks it irrelevant, and shows undo/redo
-and saving. Separate scenes return to the list with Ctrl-o, Ctrl-6, and :Tasks,
-then check off another task. Dates are relative to the day of launch, so the
-date groups remain useful in future recordings.
+The sequence targets an overview under 60 seconds, including the three-second
+countdown. It gathers work notes, personal notes, and Rust `todo!()` annotations
+from three separate source directories. It filters by tag, moves a due date
+forward and back, and uses Ctrl-t to set today. It then edits an unsaved Markdown
+task, marks it irrelevant, and shows undo/redo and saving.
+
+Ctrl-o and :Tasks return from Markdown sources. The code scene opens a real
+`todo!("Sum the cart items #code");`, replaces it with `items.iter().sum()`,
+saves, and uses Ctrl-6 to return. Refresh removes the resolved Rust task. The
+final action checks off a task in the personal notes directory. Dates are
+relative to the day of launch.
+
+The Rust scene uses the opt-in annotation rule documented in
+[the README](../README.md#tasks-in-code). All task edits use normal input;
+checkbox actions cannot append Markdown markers to the Rust source.
 
 ## Record with OBS
 
@@ -113,7 +122,8 @@ p.hold(4000)
 
 The player drives mappings and normal editing; it does not call task actions
 directly. The key display listens to typed input with `vim.on_key`, rather than
-printing the planned sequence. Text is typed character by character; `p.press()`
+printing the planned sequence. Consecutive typed characters are grouped into
+words and commands in the display, with chords separated. Text is typed character by character; `p.press()`
 delivers a mapping chord together so Neovim cannot block the player while waiting
 for the rest of the mapping. Waits yield between inputs so scans, redraws,
 Telescope, and editor events can run normally. This exercises Neovim input,
@@ -127,7 +137,8 @@ python3 scripts/demo.py --check
 
 The same storyboard runs at higher speed and checks filtering, date shifts,
 setting today, cursor tracking, all three return paths, unsaved edits, checkbox
-state, native undo/redo, disk writes, and task removal.
+state, native undo/redo, disk writes, all three source roots, Rust navigation,
+and task removal.
 It also checks for warning notifications and W10/W13 messages. It does not
 validate OBS capture, the desktop portal, or the visual framing; inspect a short
 recording on your desktop before making the final take.
@@ -140,6 +151,7 @@ recording ownership using a mock OBS API. CI runs both checks on Linux with
 stable Neovim and a pinned Telescope revision.
 
 Each launch prints its temporary directory. It contains the disposable vault,
-isolated editor state, and `result.json` with assertions and observed keys.
+isolated editor state, and `result.json` with assertions, observed keys, and elapsed playback seconds
+(including the countdown). The accelerated check duration is not the video duration.
 These directories are retained for debugging. `.demo/` holds only ignored
 coordination files. No demo hooks are loaded by the plugin during normal use.

@@ -3,6 +3,7 @@ local overlay = require("keys")
 local sequence = require("sequence")
 local config, active, paused, generation, take = nil, false, false, 0, 0
 local state, checks, warnings = {}, {}, {}
+local started_at
 
 local function recording_ack()
     local ok, ack = pcall(function()
@@ -33,6 +34,7 @@ local function finish(status, err)
             checks = checks,
             warnings = warnings,
             keys = overlay.log,
+            elapsed_seconds = started_at and ((vim.uv or vim.loop).hrtime() - started_at) / 1e9 or nil,
         }),
     }, config.root .. "/result.json")
     if config.check then
@@ -77,17 +79,17 @@ function M.keys(input)
         local token = input:sub(pos):match("^<[^>]+>") or vim.fn.strcharpart(input:sub(pos), 0, 1)
         local accepted = vim.api.nvim_input(token)
         assert(accepted == #token, "input queue rejected " .. token)
-        M.sleep(config.check and 10 or 65)
+        M.sleep(config.check and 10 or 45)
         pos = pos + #token
     end
-    M.sleep(config.check and 30 or 180)
+    M.sleep(config.check and 30 or 120)
 end
 
 -- Deliver mapping chords together: Neovim can wait for a partial mapping without
 -- running scheduled Lua callbacks. Text is still typed character by character.
 function M.press(chord)
     assert(vim.api.nvim_input(chord) == #chord, "input queue rejected " .. chord)
-    M.sleep(config.check and 30 or 250)
+    M.sleep(config.check and 30 or 180)
 end
 
 M.scene = overlay.scene
@@ -96,7 +98,7 @@ function M.text()
     return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
 end
 function M.disk(name)
-    return table.concat(vim.fn.readfile(config.root .. "/vault/" .. name), "\n")
+    return table.concat(vim.fn.readfile(config.root .. "/" .. name), "\n")
 end
 function M.tasks(text)
     M.wait(function()
@@ -120,7 +122,9 @@ local function reset()
         end
     end
     for name, lines in pairs(sequence.fixtures()) do
-        vim.fn.writefile(lines, config.root .. "/vault/" .. name)
+        local path = config.root .. "/" .. name
+        vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+        vim.fn.writefile(lines, path)
     end
     require("taskbuffer.list").invalidate()
     vim.cmd.edit(vim.fn.fnameescape(config.root .. "/vault/Studio.md"))
@@ -135,6 +139,7 @@ function M.start()
         return
     end
     active, paused, generation, take = true, false, generation + 1, take + 1
+    started_at = nil
     local id = generation
     state = { run_id = tostring((vim.uv or vim.loop).hrtime()), record = config.record }
     publish("preparing")
@@ -160,6 +165,7 @@ function M.start()
             assert(started, "OBS did not respond; load scripts/demo/obs.lua and select the control file")
         end
         publish("playing")
+        started_at = (vim.uv or vim.loop).hrtime()
         for remaining = 3, 1, -1 do
             overlay.scene("Starting in " .. remaining .. "…")
             M.hold(1000)

@@ -82,6 +82,9 @@ option not specified falls back to its default value.
       -- Task sources: directories (recursive) or glob patterns
       sources = { "~/Notes" },
 
+      -- Optional code annotation rules (see |taskbuffer-annotations|)
+      annotations = {},
+
       -- Default location for new tasks
       inbox = {
           file = "~/Notes/inbox.md",
@@ -196,6 +199,39 @@ Example: >lua
   `"narrowest"`    Task appears only in the narrowest matching horizon
 
 `week_start` sets the first day of the week (default: `"monday"`).
+
+                                                *taskbuffer-annotations*
+Tasks in code ~
+
+Sources may include multiple note directories and code projects. Annotation
+rules extend task discovery without changing Markdown checkbox syntax:
+>lua
+  require("taskbuffer").setup({
+      sources = { "~/notes", "~/projects/shop/src" },
+      annotations = {
+          {
+              extension = "rs",
+              search = "todo!",
+              pattern = '^%s*todo!%s*%(%s*"(.-)"%s*%)%s*;?%s*$',
+          },
+      },
+  })
+<
+`extension` is the filename extension without a dot. `search` is an rg/grep
+regular expression added to the existing asynchronous discovery scan.
+`pattern` is a Lua pattern whose first capture is the task text. Rules apply
+only to matching extensions, after trying the configured checkbox prefixes.
+Captured text supports the usual tags, dates, and duration syntax.
+
+The example matches a standalone, single-line `todo!("description #code");`
+with an optional semicolon. It is a text pattern, not a Rust syntax parser:
+multiline calls, raw strings, and calls embedded in expressions need different
+rules. An empty `todo!()` has no description and is not included.
+
+Code annotations are open tasks for listing, filtering, and source navigation.
+Resolve them by editing the source, then save and return to taskbuffer. Task
+checkbox/date/timer mappings refuse to modify annotation rows or add Markdown
+markers to code. Annotation discovery is disabled by default (`annotations = {}`).
 
                                                     *taskbuffer-formats*
 Date and time formats ~

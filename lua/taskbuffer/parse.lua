@@ -28,6 +28,7 @@ local async = require("taskbuffer.async")
 ---@field status      string       -- "open"|"done"|"irrelevant"|<custom>
 ---@field markers     {kind:string,date:string,time:string}[]  -- date/time RAW
 ---@field sort_last   boolean
+---@field annotation  boolean|nil -- code task: navigate/edit source, no checkbox mutations
 
 ---@class RawMatch
 ---@field path        string
@@ -68,6 +69,7 @@ function M.new_parse_context(config)
     config = config or {}
     local formats = config.formats or {}
     local ctx = {}
+    ctx.annotations = config.annotations or {}
 
     -- Duration is hardcoded <Nm> for parity (parse.go:52 ignores configured fmt).
     ctx.duration_pat = "<(%d+)m>"
@@ -213,7 +215,7 @@ function M.parse_task(match, ctx)
     line = (line:gsub("[\r\n]+$", "")) -- TrimRight "\n\r"
 
     -- 1. Status — literal longest-first prefix match (parse.go:187-196).
-    local checkbox_str, status
+    local checkbox_str, status, annotation
     for _, cb in ipairs(ctx.checkboxes) do
         if line:sub(1, #cb) == cb then
             checkbox_str = cb
@@ -222,7 +224,20 @@ function M.parse_task(match, ctx)
         end
     end
     if not checkbox_str then
-        return nil, "no checkbox found in line: " .. line
+        for _, rule in ipairs(ctx.annotations or {}) do
+            if match.path:match("%.([^./]+)$") == rule.extension then
+                local body = line:match(rule.pattern)
+                if type(body) == "string" and vim.trim(body) ~= "" then
+                    -- Parse metadata in the capture, keeping the raw source
+                    -- untouched for navigation and stale-location checks.
+                    line, checkbox_str, status, annotation = body, "", "open", true
+                    break
+                end
+            end
+        end
+        if not checkbox_str then
+            return nil, "no checkbox found in line: " .. line
+        end
     end
     local checkbox_end = #checkbox_str
 
@@ -324,6 +339,7 @@ function M.parse_task(match, ctx)
         status = status,
         markers = markers,
         sort_last = false,
+        annotation = annotation,
     }
 end
 

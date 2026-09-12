@@ -43,6 +43,18 @@ function M.build_context(config, runtime)
 
     -- rg scan pattern from the (filtered) checkbox literals.
     ctx.scan_pattern = scan.build_pattern(ctx.checkbox)
+    for _, rule in ipairs(ctx.annotations) do
+        assert(
+            type(rule.extension) == "string" and rule.extension:match("^[%w_]+$"),
+            "annotation extension must be a file extension"
+        )
+        assert(
+            type(rule.search) == "string" and rule.search ~= "",
+            "annotation search must be a nonempty rg/grep regex"
+        )
+        assert(type(rule.pattern) == "string" and rule.pattern ~= "", "annotation pattern must capture task text")
+        ctx.scan_pattern = ctx.scan_pattern .. "|(" .. rule.search .. ")"
+    end
 
     -- Raw strftime strings (state/mutate markers + format display).
     ctx.date_fmt = nonempty(formats.date, DEFAULT_DATE_FMT)

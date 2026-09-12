@@ -186,6 +186,11 @@ publish = profile.wrap("taskfile.publish", publish)
 
 function M.validate_source(path, lnum)
     local snapshot = published[vim.api.nvim_get_current_buf()]
+    local annotations = snapshot and snapshot.data and snapshot.data.annotations
+    if annotations and annotations[path] and annotations[path][lnum] then
+        vim.notify("[taskbuffer] edit the code annotation in its source (Enter or gf)", vim.log.levels.WARN)
+        return false
+    end
     local expected = snapshot and snapshot.data and snapshot.data.versions and snapshot.data.versions[path]
     local version = require("taskbuffer.source").version(path)
     local originals = snapshot and snapshot.data and snapshot.data.originals

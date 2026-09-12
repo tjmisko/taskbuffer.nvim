@@ -438,14 +438,17 @@ function M.run_task_cmd(args, refresh)
     end
     local ctx = require("taskbuffer.context").build_context(config, {})
     local line = M.read_line_from_file(args[2], tonumber(args[3]))
-    if
-        not line
-        or not require("taskbuffer.parse").parse_task(
+    local task = line
+        and require("taskbuffer.parse").parse_task(
             { path = args[2], line_number = tonumber(args[3]), text = line },
             ctx
         )
-    then
+    if not task then
         vim.notify("[taskbuffer] no task on this source line", vim.log.levels.WARN)
+        return false
+    end
+    if task.annotation then
+        vim.notify("[taskbuffer] edit the code annotation in its source", vim.log.levels.WARN)
         return false
     end
     local ok, err = require("taskbuffer.actions")[method](args[2], tonumber(args[3]), ctx)

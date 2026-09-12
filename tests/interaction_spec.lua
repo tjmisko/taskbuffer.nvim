@@ -74,6 +74,24 @@ describe("editor interactions", function()
         assert.is_true(editor.lua("return vim.bo.readonly and not vim.bo.modified and not vim.bo.swapfile"))
     end)
 
+    it("keeps source prefixes concealed while entering forward and backward searches", function()
+        editor.command("syntax enable")
+        editor.command("set incsearch")
+        editor.command("Tasks")
+        ready_tasks("Example task")
+        editor.input("G")
+        editor.wait("return vim.api.nvim_get_current_line():find('Example task',1,true) ~= nil", "task not selected")
+        for _, search in ipairs({ "/Example", "?Example" }) do
+            editor.input(search)
+            editor.wait("return vim.api.nvim_get_mode().mode == 'c'", "search did not open")
+            assert.is_truthy(editor.lua("return vim.wo.concealcursor:find('c',1,true)"))
+            assert.are.equal(2, editor.lua("return vim.wo.conceallevel"))
+            assert.are.equal(1, editor.lua("return vim.fn.synconcealed(vim.fn.line('.'), 1)[1]"))
+            editor.input("<Esc>")
+            editor.wait("return vim.api.nvim_get_mode().mode == 'n'", "search did not close")
+        end
+    end)
+
     it("delivers checkbox changes to renderers when marking a saved task irrelevant", function()
         open_source()
         if vim.env.TASKBUFFER_TEST_OBSIDIAN then

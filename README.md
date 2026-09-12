@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tjmisko/taskbuffer.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/tjmisko/taskbuffer.nvim/actions/workflows/ci.yml)
 
-Keep tasks in your Markdown files. Use Neovim to see and manage them together.
+Keep tasks in your files. Use Neovim to see and manage them together.
 
 ```markdown
 - [ ] Review the API proposal #work (@[[2026-09-14]])
@@ -144,6 +144,30 @@ opts = {
     },
 }
 ```
+
+### Tasks in code
+
+Add code directories to `sources` and opt into annotation patterns. This example
+collects standalone, single-line Rust `todo!("...")` calls alongside Markdown:
+
+```lua
+opts = {
+    sources = { "~/notes", "~/projects/shop/src" },
+    annotations = {
+        {
+            extension = "rs",
+            search = "todo!", -- rg/grep regex used during discovery
+            pattern = '^%s*todo!%s*%(%s*"(.-)"%s*%)%s*;?%s*$', -- Lua capture
+        },
+    },
+}
+```
+
+For example, `todo!("Sum the cart items #code");` appears as **Sum the cart
+items**, tagged `code`. Press Enter to open the source, implement the function,
+and save. Returning to the list removes the resolved task. Checkbox, date, and
+timer shortcuts are disabled for code annotations; they never append Markdown
+markers to your code. See `:help taskbuffer-annotations` for pattern details.
 
 The [full reference](doc/taskbuffer.txt) is also available inside Neovim:
 

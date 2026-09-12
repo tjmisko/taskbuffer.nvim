@@ -19,9 +19,13 @@ function M.invalidate()
     cached = nil
 end
 
-local function add_tags(seen, tasks)
+local function add_tags(seen, tasks, annotations)
     for _, task in ipairs(tasks) do
         async.checkpoint()
+        if annotations and task.annotation then
+            annotations[task.file_path] = annotations[task.file_path] or {}
+            annotations[task.file_path][task.line_number] = true
+        end
         if task.status == "open" then
             for _, tag in ipairs(task.tags or {}) do
                 seen[tag] = true
@@ -55,8 +59,8 @@ local function build_tasks(ctx, matches, projects, tags_only)
     profile.measure("frontmatter.tags", frontmatter.merge_tags, tasks)
     -- Tag queries deliberately include tasks before frontmatter completion/due
     -- filtering, preserving the public tags() contract.
-    local seen = {}
-    add_tags(seen, tasks)
+    local seen, annotations = {}, {}
+    add_tags(seen, tasks, annotations)
     if not tags_only then
         tasks = profile.measure("frontmatter.filter", frontmatter.filter_completed, tasks, ctx.fm_cfg)
         profile.measure("frontmatter.due", frontmatter.merge_due, tasks, ctx.fm_cfg, ctx.date_fmt, errors)
@@ -71,7 +75,7 @@ local function build_tasks(ctx, matches, projects, tags_only)
         end
     end
     add_tags(seen, project_tasks)
-    return { tasks = tasks, tags = sorted_tags(seen), errors = errors, originals = originals }
+    return { tasks = tasks, tags = sorted_tags(seen), errors = errors, originals = originals, annotations = annotations }
 end
 build_tasks = profile.wrap("tasks.build", build_tasks)
 

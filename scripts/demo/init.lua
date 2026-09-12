@@ -15,10 +15,16 @@ vim.opt.number = true
 vim.opt.relativenumber = false
 vim.opt.signcolumn = "no"
 vim.opt.wrap = false
+vim.opt.autoindent = true
+vim.opt.shiftwidth = 4
+vim.opt.expandtab = true
 vim.opt.scrolloff = 5
 vim.opt.sidescrolloff = 3
 vim.opt.laststatus = 2
 vim.opt.showmode = false
+vim.opt.hlsearch = false
+vim.opt.incsearch = true
+vim.opt.shortmess:append("F")
 vim.opt.ruler = false
 vim.opt.timeoutlen = 1200
 vim.opt.updatetime = 100
@@ -64,7 +70,14 @@ require("telescope").setup({
 })
 vim.ui.select = require("picker").select
 require("taskbuffer").setup({
-    sources = { config.root .. "/vault" },
+    sources = { config.root .. "/vault", config.root .. "/personal", config.root .. "/project" },
+    annotations = {
+        {
+            extension = "rs",
+            search = "todo!",
+            pattern = '^%s*todo!%s*%(%s*"(.-)"%s*%)%s*;?%s*$',
+        },
+    },
     tmpdir = config.root .. "/tmp",
     state_dir = config.root .. "/state",
     inbox = { file = config.root .. "/vault/inbox.md" },

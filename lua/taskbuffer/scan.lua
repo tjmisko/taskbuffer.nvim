@@ -109,7 +109,7 @@ end
 ---@param pattern string
 ---@param paths string[]
 ---@return string[]
-local function build_scan_argv(pattern, paths)
+local function build_scan_argv(pattern, paths, annotations)
     local argv
     if M._have_rg() then
         -- --no-config (D5): ignore a user's RIPGREP_CONFIG_PATH that could inject
@@ -123,6 +123,9 @@ local function build_scan_argv(pattern, paths)
         -- -r=recursive WITHOUT following symlinks (matches rg default; -R follows),
         -- -E=ERE (the alternation pattern needs it), -I=skip binary.
         argv = { "grep", "-rnEHI", "--null", "--include=*.md", "-e", pattern }
+        for _, rule in ipairs(annotations or {}) do
+            argv[#argv + 1] = "--include=*." .. rule.extension
+        end
     end
     argv[#argv + 1] = "--"
     vim.list_extend(argv, paths)
@@ -223,7 +226,7 @@ function M.scan(ctx)
     if #paths == 0 then
         return {}, nil -- no rg invocation (scan.go:90-92)
     end
-    local argv = build_scan_argv(ctx_pattern(ctx), paths)
+    local argv = build_scan_argv(ctx_pattern(ctx), paths, ctx and ctx.annotations)
     local span = profile.begin("scan.process.sync")
     local res = vim.system(argv, { text = true }):wait()
     profile.finish(span)
@@ -278,7 +281,12 @@ function M.scan_async(ctx, cb)
             return {}
         end, cb)
     end
-    return run_async(build_scan_argv(ctx_pattern(ctx), paths), classify_exit, "scan.process.async", cb)
+    return run_async(
+        build_scan_argv(ctx_pattern(ctx), paths, ctx and ctx.annotations),
+        classify_exit,
+        "scan.process.async",
+        cb
+    )
 end
 
 --- Find markdown files whose content contains a `- project` line (the project
