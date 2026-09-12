@@ -39,7 +39,7 @@ function M.register()
         callback = function(event)
             local tags = package.loaded["taskbuffer.tags"]
             if tags then
-                tags.cancel(event.buf)
+                tags.cancel(event.buf, event.event == "BufHidden")
             end
             local buffer = package.loaded["taskbuffer.buffer"]
             if buffer then

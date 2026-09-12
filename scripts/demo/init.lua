@@ -62,6 +62,7 @@ require("telescope").setup({
         previewer = false,
     },
 })
+vim.ui.select = require("picker").select
 require("taskbuffer").setup({
     sources = { config.root .. "/vault" },
     tmpdir = config.root .. "/tmp",

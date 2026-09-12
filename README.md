@@ -20,11 +20,13 @@ Taskbuffer also reads tags and due dates from YAML frontmatter.
 - Neovim **0.10 or newer**.
 - Linux or macOS, with the standard `cp` utility. Windows is not tested.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) for task discovery.
-- Optional: [Telescope](https://github.com/nvim-telescope/telescope.nvim#installation)
-  for the tag picker.
 
 Taskbuffer is written in Lua and requires no build step. It works with Markdown
 files independently of Obsidian.
+
+Tag filtering uses `vim.ui.select`: Neovim's built-in menu works out of the box.
+Any picker configured to provide `vim.ui.select` can replace it; Telescope is
+not required.
 
 ## Installation
 
@@ -100,7 +102,7 @@ In taskbuffer:
 | Key | Action |
 | --- | --- |
 | `<Enter>` / `gf` | Open the task's source |
-| `#` | Filter by tag with Telescope |
+| `#` | Toggle a tag filter with your configured picker |
 | `<leader>tt` | Reset filters |
 | `<leader>ts` | Toggle undated tasks |
 | `<leader>tj` | Toggle timestamp markers |
@@ -110,6 +112,11 @@ In taskbuffer:
 Date changes also work on a visual selection in taskbuffer. The global
 `<leader>ev` mapping inserts a dated note entry. All mappings can be changed or
 disabled; see `:help taskbuffer-keybindings` for the complete list.
+
+Open `#` again to add another tag or deselect an active tag. Use `<leader>tt` to
+clear all filters. After opening a source with Enter or `gf`, use Neovim's
+`<C-o>` (jump back) or `<C-6>` (alternate buffer) to return. The task list refreshes
+on entry. `:Tasks` also returns and refreshes, and clears tag filters.
 
 ### Commands
 

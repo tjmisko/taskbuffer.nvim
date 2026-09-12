@@ -32,7 +32,7 @@ bucketed by date interval (Overdue, Today, Tomorrow, This Week, etc.).
 - Neovim >= 0.10
 - Linux or macOS with the standard cp utility (Windows is unvalidated)
 - ripgrep (`rg`) on PATH
-- Optional: telescope.nvim (for tag filtering)
+- Tag picker: Neovim's built-in vim.ui.select, or a configured provider
 
 The plugin is pure Lua; there is no build step or separate taskbuffer executable.
 
@@ -273,7 +273,7 @@ Run `:checkhealth taskbuffer` to verify your setup. Checks:
 - Neovim version (>= 0.10)
 - ripgrep is available
 - Source directories exist
-- telescope.nvim availability (optional)
+- vim.ui.select tag picker (no picker plugin required)
 
 ==============================================================================
 5. COMMANDS                                         *taskbuffer-commands*
@@ -330,7 +330,7 @@ Taskfile buffer ~
   `gf` / `<CR>`       Jump to source file location
   `<leader>ti`        Mark task irrelevant
   `<leader>tu`        Undo irrelevant
-  `#`                 Open Telescope tag picker
+  `#`                 Toggle a tag filter using vim.ui.select
   `<leader>tt`        Clear all filters
   `<leader>tj`        Show/hide `::` markers
   `<leader>ts`        Toggle undated task visibility
@@ -343,6 +343,18 @@ Taskfile buffer ~
 
 Date shift, set today, and quickfix also work in visual mode on
 multiple tasks.
+
+Date changes keep the cursor on the selected task as it moves between groups.
+After jumping to a source, <C-o> or <C-6> returns to the task list and refreshes
+saved changes. :Tasks also returns and refreshes, and clears tag filters.
+<C-o> and <C-6> use Neovim's normal jumplist and alternate-buffer navigation.
+
+The tag picker uses vim.ui.select. Neovim's built-in menu works without extra
+plugins; a configured vim.ui.select provider supplies its own interface. Pick a
+tag to toggle it on/off; open # again to select more tags. Active tags show [x].
+Use <leader>tt to clear all filters. Dismissing the picker leaves filters alone.
+Telescope users can configure telescope-ui-select.nvim or another vim.ui.select
+adapter; installing Telescope alone does not replace vim.ui.select.
 
 Markdown files ~
 

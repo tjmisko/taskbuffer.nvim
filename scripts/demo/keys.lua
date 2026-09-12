@@ -1,5 +1,12 @@
 local M = { history = {}, log = {}, title = "" }
 local ns = vim.api.nvim_create_namespace("taskbuffer-demo-keys")
+local shortcuts = {
+    ["<C-^>"] = "Ctrl-6",
+    ["<C-O>"] = "Ctrl-o",
+    ["<C-T>"] = "Ctrl-t",
+    ["<M-Left>"] = "Alt+Left",
+    ["<M-Right>"] = "Alt+Right",
+}
 
 function M.render()
     if not M.buf or not vim.api.nvim_buf_is_valid(M.buf) then
@@ -52,6 +59,8 @@ function M.setup()
         if label == "<CR>" then
             label = "Enter"
         end
+        -- Neovim reports Ctrl-6 as Ctrl-^; show the physical chord in the video.
+        label = shortcuts[label] or label
         M.history[#M.history + 1] = label
         while #table.concat(M.history, " ") > 65 do
             table.remove(M.history, 1)

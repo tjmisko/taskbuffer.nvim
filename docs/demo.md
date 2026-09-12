@@ -9,6 +9,8 @@ are not loaded.
 
 Requirements: Python 3, a current stable Neovim, ripgrep, `cp`, and WezTerm. The
 tag-filter scene also needs compatible versions of Telescope and Plenary.
+These provide the demo's `vim.ui.select` presentation; taskbuffer itself works
+with Neovim's built-in menu or any configured `vim.ui.select` provider.
 By default the launcher finds these in
 `~/.local/share/nvim/lazy`; pass `--deps /path/to/plugins` for another location.
 Catppuccin is used when present in that directory; otherwise the demo uses
@@ -36,11 +38,12 @@ F5 does nothing during playback; use F8 first to restart. F6 pauses the keys,
 while OBS continues recording. Avoid other typing during a take. Between takes,
 you can explore the sample vault normally. F5 discards those sample edits.
 
-The sequence targets a 60–90 second overview (about 75 seconds at normal speed):
-open the list, filter by tag, shift and
-undo a due date, jump to a source, edit an unsaved task, mark it irrelevant,
-undo/redo, save, refresh, and check off another task. Dates are relative to the
-day of launch, so the date groups remain useful in future recordings.
+The sequence targets a 60–90 second overview: open the list, filter by tag,
+move a due date forward and back, and use Ctrl-t to set it to today. It then
+opens a source, edits an unsaved task, marks it irrelevant, and shows undo/redo
+and saving. Separate scenes return to the list with Ctrl-o, Ctrl-6, and :Tasks,
+then check off another task. Dates are relative to the day of launch, so the
+date groups remain useful in future recordings.
 
 ## Record with OBS
 
@@ -122,8 +125,9 @@ Verify two complete takes, including resetting the vault, without a display:
 python3 scripts/demo.py --check
 ```
 
-The same storyboard runs at higher speed and checks filtering, date undo,
-unsaved edits, checkbox state, native undo/redo, disk writes, and task removal.
+The same storyboard runs at higher speed and checks filtering, date shifts,
+setting today, cursor tracking, all three return paths, unsaved edits, checkbox
+state, native undo/redo, disk writes, and task removal.
 It also checks for warning notifications and W10/W13 messages. It does not
 validate OBS capture, the desktop portal, or the visual framing; inspect a short
 recording on your desktop before making the final take.

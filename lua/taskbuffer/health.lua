@@ -40,13 +40,7 @@ function M.check()
         end
     end
 
-    -- 5. telescope.nvim (optional)
-    local has_telescope = pcall(require, "telescope")
-    if has_telescope then
-        vim.health.ok("telescope.nvim available (tag picker enabled)")
-    else
-        vim.health.info("telescope.nvim not found (tag picker disabled)")
-    end
+    vim.health.ok("Tag picker uses vim.ui.select (built-in or configured provider)")
 end
 
 return M

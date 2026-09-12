@@ -127,13 +127,30 @@ local function publish(buf, text, data)
         previous.data = data
         return
     end
-    local views = {}
+    local function task_key(line)
+        local path, lnum = require("taskbuffer.util").parse_taskfile_line(line)
+        return path and path .. "\0" .. lnum or nil
+    end
+    local views, selected, locations = {}, {}, {}
     for _, win in ipairs(vim.fn.win_findbuf(buf)) do
         views[win] = vim.api.nvim_win_call(win, vim.fn.winsaveview)
+        local row = views[win].lnum
+        selected[win] = task_key(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or "")
+        if selected[win] then
+            locations[selected[win]] = {}
+        end
     end
     local lines = vim.split(text, "\n", { plain = true })
     if lines[#lines] == "" then
         table.remove(lines)
+    end
+    if next(locations) then
+        for row, line in ipairs(lines) do
+            local key = task_key(line)
+            if key and locations[key] then
+                table.insert(locations[key], row)
+            end
+        end
     end
     local modifiable = vim.bo[buf].modifiable
     vim.bo[buf].modifiable = true
@@ -145,7 +162,20 @@ local function publish(buf, text, data)
     published[buf] = { text = text, tick = vim.api.nvim_buf_get_changedtick(buf), data = data }
     for win, view in pairs(views) do
         if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
-            view.lnum = math.min(view.lnum, vim.api.nvim_buf_line_count(buf))
+            local row, distance = nil, math.huge
+            for _, candidate in ipairs(locations[selected[win]] or {}) do
+                if math.abs(candidate - view.lnum) < distance then
+                    row, distance = candidate, math.abs(candidate - view.lnum)
+                end
+            end
+            if row then
+                -- Date changes can reorder tasks across groups. Keep the same
+                -- task selected so the next shortcut cannot edit its neighbor.
+                view.topline = math.max(1, view.topline + row - view.lnum)
+                view.lnum = row
+            else
+                view.lnum = math.min(view.lnum, vim.api.nvim_buf_line_count(buf))
+            end
             vim.api.nvim_win_call(win, function()
                 vim.fn.winrestview(view)
             end)

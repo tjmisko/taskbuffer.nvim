@@ -125,6 +125,7 @@ local function reset()
     require("taskbuffer.list").invalidate()
     vim.cmd.edit(vim.fn.fnameescape(config.root .. "/vault/Studio.md"))
     vim.cmd("normal! gg")
+    vim.cmd("clearjumps")
     vim.cmd("nohlsearch")
     vim.v.errmsg = ""
 end

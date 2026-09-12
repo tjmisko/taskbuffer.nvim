@@ -110,6 +110,98 @@ describe("editor interactions", function()
         assert.are.same({ initial, "Saved paragraph" }, vim.fn.readfile(editor.path))
     end)
 
+    for _, keys in ipairs({ "<C-o>", "<C-6>", ":Tasks<CR>" }) do
+        it("returns to the same task list with " .. keys .. " and picks up saved edits", function()
+            editor.command("Tasks")
+            ready_tasks("Example task")
+            local taskbuf = editor.lua("return vim.api.nvim_get_current_buf()")
+            editor.input("G<CR>")
+            editor.wait("return vim.bo.filetype == 'markdown'", "Enter did not open the source")
+            editor.input("0fEiUpdated <Esc>:write<CR>")
+            editor.wait(
+                "return not vim.bo.modified and vim.api.nvim_get_current_line():find('Updated Example', 1, true) ~= nil",
+                "source edit was not saved"
+            )
+            editor.input(keys)
+            editor.wait(
+                "return vim.api.nvim_get_current_buf() == ...",
+                "navigation did not return to the task list",
+                taskbuf
+            )
+            ready_tasks("Updated Example")
+            assert.is_true(editor.lua("return vim.bo.readonly and not vim.bo.modified"))
+            editor.no_warnings()
+        end)
+    end
+
+    it("filters and toggles tags with Neovim's built-in picker and no Telescope", function()
+        local function wait_for_menu()
+            -- inputlist blocks ordinary RPC requests; get_mode is a fast API.
+            local mode
+            assert.is_true(
+                vim.wait(3000, function()
+                    mode = vim.rpcrequest(editor.job, "nvim_get_mode")
+                    return mode.mode:sub(1, 1) == "r" or mode.mode == "c"
+                end, 10),
+                "built-in select menu did not open: " .. vim.inspect(mode)
+            )
+        end
+        vim.fn.writefile({ "- [ ] Home task #home", "- [ ] Work task #work" }, editor.path)
+        editor.command("Tasks")
+        ready_tasks("Home task")
+        assert.is_true(
+            editor.lua("return package.loaded['telescope'] == nil and package.loaded['telescope.pickers'] == nil")
+        )
+        editor.input("#")
+        wait_for_menu()
+        editor.input("2<CR>")
+        editor.wait(
+            "return vim.deep_equal(require('taskbuffer.buffer').get_tag_filter(), {'work'})",
+            "work tag was not selected"
+        )
+        ready_tasks("Work task")
+        assert.is_nil(table.concat(editor.lines(), "\n"):find("Home task", 1, true))
+        editor.input("#")
+        wait_for_menu()
+        editor.input("2<CR>")
+        editor.wait("return #require('taskbuffer.buffer').get_tag_filter() == 0", "work tag was not toggled off")
+        ready_tasks("Home task")
+        editor.no_warnings()
+    end)
+
+    it("keeps date shortcuts on the same task as it moves between groups", function()
+        local function date(days)
+            local time = os.date("*t")
+            time.day, time.hour = time.day + days, 12
+            return os.date("%Y-%m-%d", os.time(time))
+        end
+        local function task(name, days)
+            return "- [ ] " .. name .. " (@[[" .. date(days) .. "]])"
+        end
+        local original, neighbor = task("First task", 0), task("Neighbor task", 1)
+        vim.fn.writefile({ original, neighbor }, editor.path)
+        editor.command("Tasks")
+        ready_tasks("First task")
+        editor.input("ggj")
+        editor.wait(
+            "return vim.api.nvim_get_current_line():find('First task', 1, true) ~= nil",
+            "first task not selected"
+        )
+        for _, action in ipairs({ { "<M-Right>", 1 }, { "<M-Left>", 0 }, { "2<M-Right>", 2 }, { "<C-t>", 0 } }) do
+            editor.input(action[1])
+            editor.wait(
+                "return vim.fn.readfile(...)[1] == select(2, ...)",
+                "date action changed the wrong task",
+                editor.path,
+                task("First task", action[2])
+            )
+            ready_tasks("First task")
+            assert.is_truthy(editor.lua("return vim.api.nvim_get_current_line():find('First task', 1, true)"))
+            assert.are.equal(neighbor, vim.fn.readfile(editor.path)[2])
+        end
+        editor.no_warnings()
+    end)
+
     it("marks an edited and moved task irrelevant, with one native undo step", function()
         open_source()
         editor.input("ggOUnsaved heading<Esc>j$A edited<Esc>")
