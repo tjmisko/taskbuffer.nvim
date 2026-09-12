@@ -32,6 +32,8 @@ describe("async listing and source snapshots", function()
         }
         dir = vim.fn.tempname()
         vim.fn.mkdir(dir, "p")
+        -- The scanner resolves aliases, including macOS /var -> /private/var.
+        dir = assert(vim.uv.fs_realpath(dir))
         config.apply({ sources = { dir }, tmpdir = dir, state_dir = dir, inbox = { file = dir .. "/inbox.md" } })
         list.invalidate()
     end)
