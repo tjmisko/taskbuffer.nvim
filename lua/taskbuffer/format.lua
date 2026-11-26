@@ -204,10 +204,7 @@ local function pad(text, width, right)
     return right and spaces .. text or text .. spaces
 end
 
--- The interactive view contains only visible text. Source locations stay in
--- the row table; no concealed prefixes, tabs, or date wrappers are needed.
-function M.format_task_text(task, opts)
-    opts = opts or {}
+local function render_task_text(task, opts)
     local date = task.due_date and strftime.format_epoch(task.due_date, opts.date_strftime or "%Y-%m-%d") or ""
     local parts = {
         pad(date, 10),
@@ -220,6 +217,50 @@ function M.format_task_text(task, opts)
     }
     append_metadata(parts, task, opts)
     return table.concat(parts)
+end
+
+-- Rendered row text is cached on the task object. Only reparsed files produce
+-- new task objects, so an action re-renders one row. The entry is valid for the
+-- display options that shape the text and the fields it was built from.
+local function row_cache_key(opts)
+    return table.concat({
+        opts.date_strftime or "",
+        opts.markers and "m" or "-",
+        opts.tag_prefix or "",
+        opts.marker_prefix or "",
+    }, "\0")
+end
+
+-- The interactive view contains only visible text. Source locations stay in
+-- the row table; no concealed prefixes, tabs, or date wrappers are needed.
+function M.format_task_text(task, opts)
+    opts = opts or {}
+    local key = opts._row_key or row_cache_key(opts)
+    local cache = task._row_cache
+    if
+        cache
+        and cache.key == key
+        and cache.body == task.body
+        and cache.due_date == task.due_date
+        and cache.due_time == task.due_time
+        and cache.duration == task.duration
+        and cache.tags == task.tags
+        and cache.markers == task.markers
+    then
+        return cache.text
+    end
+    local text = render_task_text(task, opts)
+    task._row_cache = {
+        key = key,
+        body = task.body,
+        due_date = task.due_date,
+        due_time = task.due_time,
+        duration = task.duration,
+        tags = task.tags,
+        markers = task.markers,
+        text = text,
+    }
+    return text
 end
 
 --- OR-membership: does `task` carry any of `tags`?
@@ -235,6 +276,77 @@ function M.task_matches_tags(task, tags)
         end
     end
     return false
+end
+
+-- Order of the previous render per section. After an action only a few task
+-- objects are new, so sort those and merge them into the surviving order
+-- instead of sorting every task again. The merged order is verified, and any
+-- doubt falls back to a full sort, so the result always equals a full sort.
+local previous_order = {}
+local MEMO_MIN = 64
+
+local function in_order(items, less)
+    for i = 2, #items do
+        if less(items[i], items[i - 1]) then
+            return false
+        end
+    end
+    return true
+end
+
+local function merge_into_previous(slot, items, less)
+    local previous = previous_order[slot]
+    if not previous or #items < MEMO_MIN then
+        return false
+    end
+    local current = {}
+    for _, task in ipairs(items) do
+        current[task] = true
+    end
+    local survivors, known = {}, {}
+    for _, task in ipairs(previous) do
+        async.checkpoint()
+        if current[task] and not known[task] then
+            survivors[#survivors + 1] = task
+            known[task] = true
+        end
+    end
+    local fresh = {}
+    for _, task in ipairs(items) do
+        if not known[task] then
+            fresh[#fresh + 1] = task
+        end
+    end
+    if #fresh * 4 > #items then
+        return false
+    end
+    async.sort(fresh, less)
+    local merged, left, right = {}, 1, 1
+    while left <= #survivors or right <= #fresh do
+        async.checkpoint()
+        local take_fresh = left > #survivors or (right <= #fresh and less(fresh[right], survivors[left]))
+        if take_fresh then
+            merged[#merged + 1] = fresh[right]
+            right = right + 1
+        else
+            merged[#merged + 1] = survivors[left]
+            left = left + 1
+        end
+    end
+    if #merged ~= #items or not in_order(merged, less) then
+        return false
+    end
+    for i = 1, #merged do
+        items[i] = merged[i]
+    end
+    return true
+end
+
+local function sort_section(slot, items, less)
+    if not merge_into_previous(slot, items, less) then
+        async.sort(items, less)
+    end
+    previous_order[slot] = items
 end
 
 ---@class TaskbufferView
@@ -294,7 +406,7 @@ local function render_rows(tasks, now, opts, render_line)
     end
 
     -- Sort dated: date, then file path, then sort_last after regular, then line.
-    async.sort(dated, function(a, b)
+    sort_section("dated", dated, function(a, b)
         if a.due_date ~= b.due_date then
             return a.due_date < b.due_date
         end
@@ -310,7 +422,7 @@ local function render_rows(tasks, now, opts, render_line)
     end)
 
     -- Sort undated: file path, then sort_last, then line.
-    async.sort(undated, function(a, b)
+    sort_section("undated", undated, function(a, b)
         if a.file_path ~= b.file_path then
             return a.file_path < b.file_path
         end
@@ -328,6 +440,7 @@ local function render_rows(tasks, now, opts, render_line)
     end
 
     local lines, rows = {}, {}
+    local count = 0 -- #lines, tracked by hand: the length operator is O(log n)
     local interval = 1
     local last_interval = nil
 
@@ -340,24 +453,32 @@ local function render_rows(tasks, now, opts, render_line)
         elseif overlap == "narrowest" then
             interval = M.narrowest_horizon(date, dated_horizons)
         else -- "sorted": stateful monotonic forward scan
-            for i = interval, #dated_horizons do
-                if M.in_horizon(date, i, dated_horizons) then
-                    interval = i
-                    break
+            -- Most tasks stay in the bucket of the previous one: test it inline.
+            local current = dated_horizons[interval]
+            local following = dated_horizons[interval + 1]
+            if not (date >= current.cutoff and (not following or date < following.cutoff)) then
+                for i = interval, #dated_horizons do
+                    if M.in_horizon(date, i, dated_horizons) then
+                        interval = i
+                        break
+                    end
                 end
             end
         end
 
         if interval ~= last_interval then
             if last_interval ~= nil then
-                lines[#lines + 1] = "" -- blank line between buckets
+                count = count + 1
+                lines[count] = "" -- blank line between buckets
             end
-            lines[#lines + 1] = dated_horizons[interval].label
+            count = count + 1
+            lines[count] = dated_horizons[interval].label
             last_interval = interval
         end
 
-        lines[#lines + 1] = render_line(t, opts)
-        rows[#lines] = t
+        count = count + 1
+        lines[count] = render_line(t, opts)
+        rows[count] = t
     end
 
     -- Undated section.
@@ -367,14 +488,17 @@ local function render_rows(tasks, now, opts, render_line)
     end
 
     if #undated > 0 and not opts.ignore_undated then
-        if #lines > 0 then
-            lines[#lines + 1] = ""
+        if count > 0 then
+            count = count + 1
+            lines[count] = ""
         end
-        lines[#lines + 1] = undated_label
+        count = count + 1
+        lines[count] = undated_label
         for _, t in ipairs(undated) do
             async.checkpoint()
-            lines[#lines + 1] = render_line(t, opts)
-            rows[#lines] = t
+            count = count + 1
+            lines[count] = render_line(t, opts)
+            rows[count] = t
         end
     end
 
@@ -388,7 +512,12 @@ function M.format_taskfile(tasks, now, opts)
 end
 
 function M.format_view(tasks, now, opts)
-    return render_rows(tasks, now, opts, M.format_task_text)
+    opts = opts or {}
+    -- Compute the cache key once per render instead of once per task.
+    local keyed = setmetatable({ _row_key = row_cache_key(opts) }, { __index = opts })
+    return render_rows(tasks, now, opts, function(task)
+        return M.format_task_text(task, keyed)
+    end)
 end
 
 return M
