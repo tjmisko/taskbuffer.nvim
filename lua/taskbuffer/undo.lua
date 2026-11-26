@@ -157,32 +157,90 @@ function M.redo()
     vim.notify("[taskbuffer] redid: " .. entry.op .. " (" .. task_count(#entry.edits) .. ")", vim.log.levels.INFO)
 end
 
---- Forget one edit whose write was reverted; the entry goes when it empties.
+local function remove_edit(stack, position, index)
+    local entry = stack[position]
+    table.remove(entry.edits, index)
+    if #entry.edits == 0 then
+        table.remove(stack, position)
+    end
+end
+
+-- Find an edit on this file whose old_line is `text`, searching oldest first.
+local function find_forward(stack, path, text, source)
+    for position = 1, #stack do
+        local edits = stack[position].edits
+        for index = 1, #edits do
+            if edits[index].old_line == text and source.canonical(edits[index].filepath) == path then
+                return position, index
+            end
+        end
+    end
+    return nil
+end
+
+-- Walk the chain old -> ... -> new through the stacks, dropping each link.
+-- The writer merges consecutive edits of one line into a single record, so one
+-- record can span several undo edits (L0->L1, L1->L2).
+local function drop_chain(stack, path, old_line, new_line, source)
+    local dropped = 0
+    local current = old_line
+    while current ~= new_line and dropped < 1000 do
+        local position, index = find_forward(stack, path, current, source)
+        if not position then
+            break
+        end
+        current = stack[position].edits[index].new_line
+        remove_edit(stack, position, index)
+        dropped = dropped + 1
+    end
+    return dropped > 0 and current == new_line
+end
+
+--- Forget the edits whose write was reverted; entries go when they empty.
 ---@param path string canonical path of the file
 ---@param record table writer record { old_lines, new_lines }
 function M.drop_edit(path, record)
     local source = require("taskbuffer.source")
     local old_line, new_line = record.old_lines[1], record.new_lines[1]
-    local function drop_from(stack)
+    -- Probe first so a failed chain removes nothing.
+    local function chain_exists(stack)
+        local current, steps = old_line, 0
+        while current ~= new_line and steps < 1000 do
+            local position, index = find_forward(stack, path, current, source)
+            if not position then
+                return false
+            end
+            current = stack[position].edits[index].new_line
+            steps = steps + 1
+        end
+        return current == new_line
+    end
+    for _, stack in ipairs({ undo_stack, redo_stack }) do
+        if chain_exists(stack) then
+            drop_chain(stack, path, old_line, new_line, source)
+            return
+        end
+    end
+    -- Reverse-direction records (from undo/redo) match a single edit backwards.
+    local function drop_backward(stack)
         for position = #stack, 1, -1 do
-            local entry = stack[position]
-            for index = #entry.edits, 1, -1 do
-                local edit = entry.edits[index]
-                local forward = edit.old_line == old_line and edit.new_line == new_line
-                local backward = edit.old_line == new_line and edit.new_line == old_line
-                if (forward or backward) and source.canonical(edit.filepath) == path then
-                    table.remove(entry.edits, index)
-                    if #entry.edits == 0 then
-                        table.remove(stack, position)
-                    end
+            local edits = stack[position].edits
+            for index = #edits, 1, -1 do
+                local edit = edits[index]
+                if
+                    edit.old_line == new_line
+                    and edit.new_line == old_line
+                    and source.canonical(edit.filepath) == path
+                then
+                    remove_edit(stack, position, index)
                     return true
                 end
             end
         end
         return false
     end
-    if not drop_from(undo_stack) then
-        drop_from(redo_stack)
+    if not drop_backward(undo_stack) then
+        drop_backward(redo_stack)
     end
 end
 

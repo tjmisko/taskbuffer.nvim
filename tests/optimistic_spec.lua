@@ -131,11 +131,20 @@ describe("optimistic task list actions", function()
         vim.fn.writefile({ "- [ ] Quick task (@[[2026-02-17]])" }, editor.path)
         editor.command("Tasks")
         ready_tasks("Quick task")
+        editor.lua([[
+            local real = vim.uv.fs_rename
+            vim.uv.fs_rename = function(...)
+                local args = { ... }
+                vim.defer_fn(function() real(unpack(args)) end, 5000)
+                return true
+            end
+        ]])
         editor.input("ggj<Space>ti")
         editor.wait(
             "return not table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), ''):find('Quick', 1, true)",
             "no action"
         )
+        assert.is_falsy(vim.fn.readfile(editor.path)[1]:find("::irrelevant", 1, true))
         pcall(editor.command, "qa!")
         vim.wait(1000, function()
             return vim.fn.readfile(editor.path)[1]:find("::irrelevant", 1, true) ~= nil

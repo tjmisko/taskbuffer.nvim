@@ -191,6 +191,26 @@ describe("background writer", function()
             assert.are.equal("- [ ] two edited elsewhere", util.read_line_from_file(path, 2))
         end)
 
+        it("should drop every undo entry of a merged record when the line changed on disk", function()
+            local l0, l1, l2 = "- [ ] two", "- [x] two", "- [x] two ::done"
+            util.replace_line_in_file(path, 2, l1)
+            undo.push({
+                op = "check",
+                edits = { { filepath = path, linenumber = 2, old_line = l0, new_line = l1 } },
+                timestamp = os.time(),
+            })
+            util.replace_line_in_file(path, 2, l2)
+            undo.push({
+                op = "check",
+                edits = { { filepath = path, linenumber = 2, old_line = l1, new_line = l2 } },
+                timestamp = os.time(),
+            })
+            assert.are.equal(2, (undo.depth()))
+            vim.fn.writefile({ "- [ ] one", "- [ ] two edited elsewhere", "- [ ] three" }, path)
+            writer.flush_sync()
+            assert.are.equal(0, (undo.depth()))
+        end)
+
         it("should conflict when the matching text became ambiguous", function()
             util.replace_line_in_file(path, 2, "- [x] two")
             vim.fn.writefile({ "- [ ] two", "- [ ] one", "- [ ] two", "- [ ] three" }, path)
