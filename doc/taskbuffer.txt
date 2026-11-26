@@ -404,6 +404,11 @@ Taskfile buffer ~
 Date shift, set today, and quickfix also work in visual mode on
 multiple tasks.
 
+`<leader>tc`, `<leader>td`, `<leader>tx`, and `<leader>ti` also work on a
+visual, linewise, or blockwise selection: every task row the selection touches
+gets the action, and heading rows are ignored. The whole selection is checked
+first; if any row is stale, nothing changes. The result is one `u` step.
+
 Date changes keep the cursor on the selected task as it moves between groups.
 After jumping to a source, <C-o> or <C-6> returns to the task list and refreshes
 saved changes. :Tasks also returns and refreshes, and clears tag filters.

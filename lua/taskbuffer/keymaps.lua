@@ -512,6 +512,32 @@ function M.attach_taskfile()
         shift_task_dates_bulk(tasks, count)
     end, { buffer = true, desc = "Shift selected task dates forward" })
 
+    -- Task verbs over a visual selection (charwise, linewise, or blockwise).
+    -- complete/defer/check_off use the global key; irrelevant uses the taskfile
+    -- key, falling back to the global one when it is unset. (undo_irrelevant
+    -- has no bulk form: the list shows only open tasks; `u` undoes there.)
+    local cfg = get_config()
+    for action, verb in pairs({
+        complete = "complete-at",
+        defer = "defer",
+        check_off = "check",
+        irrelevant = "irrelevant",
+    }) do
+        local lhs = cfg.keymaps.taskfile[action]
+        if lhs == nil then
+            lhs = cfg.keymaps.global[action]
+        end
+        if lhs then
+            vim.keymap.set("x", lhs, function()
+                local tasks = visual_tasks()
+                if not tasks then
+                    return
+                end
+                util.run_task_cmd_bulk(verb, tasks)
+            end, { buffer = true, desc = "Apply " .. verb .. " to selected tasks" })
+        end
+    end
+
     map("v", "taskfile", "quickfix", function()
         local tasks = visual_tasks()
         if not tasks then

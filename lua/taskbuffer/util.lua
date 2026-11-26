@@ -447,6 +447,17 @@ local VERB_TO_ACTION = {
     ["unset"] = "unset",
 }
 
+-- The status a task must have for each verb to apply. Tasks that do not fit
+-- the verb are skipped, never mutated (completing a done task would otherwise
+-- append a stray ::complete marker).
+local VERB_REQUIRED_STATUS = {
+    ["complete-at"] = "open",
+    ["defer"] = "open",
+    ["check"] = "open",
+    ["irrelevant"] = "open",
+    ["unset"] = "irrelevant",
+}
+
 function M.run_task_cmd(args, refresh)
     local config = require("taskbuffer.config").values
 
@@ -492,6 +503,111 @@ function M.run_task_cmd(args, refresh)
         })
     end
     require("taskbuffer.buffer").apply_local_change()
+    return true
+end
+
+local BULK_VERB_PAST_TENSE = {
+    ["complete-at"] = "completed",
+    ["defer"] = "deferred",
+    ["check"] = "checked off",
+    ["irrelevant"] = "marked irrelevant",
+    ["unset"] = "restored",
+}
+
+local function task_count(n)
+    return n == 1 and "1 task" or (n .. " tasks")
+end
+
+--- Apply one verb to every task selected in the task list, as one undo step.
+--- Every task is validated before any source line changes: a stale row, an
+--- unwritable source, or a code annotation rejects the whole selection.
+---@param verb string
+---@param tasks table[] rows from buffer.tasks_in_rows
+---@return boolean success
+function M.run_task_cmd_bulk(verb, tasks)
+    local method = VERB_TO_ACTION[verb]
+    if not method then
+        vim.notify("[taskbuffer] unknown action: " .. tostring(verb), vim.log.levels.ERROR)
+        return false
+    end
+    if #tasks == 0 then
+        vim.notify("[taskbuffer] no tasks in selection", vim.log.levels.WARN)
+        return false
+    end
+    local buffer = require("taskbuffer.buffer")
+    local parse = require("taskbuffer.parse")
+    local ctx = require("taskbuffer.context").build_context(require("taskbuffer.config").values, {})
+
+    local targets, skipped = {}, 0
+    for _, row in ipairs(tasks) do
+        local path, lnum = row.file_path, row.line_number
+        if not M.check_source(path) or not buffer.validate_source(path, lnum) then
+            return false
+        end
+        local line = M.read_line_from_file(path, lnum)
+        local task = line and parse.parse_task({ path = path, line_number = lnum, text = line }, ctx)
+        if not task then
+            vim.notify("[taskbuffer] no task on source line " .. path .. ":" .. lnum, vim.log.levels.WARN)
+            return false
+        end
+        if task.annotation then
+            vim.notify("[taskbuffer] edit the code annotation in its source", vim.log.levels.WARN)
+            return false
+        end
+        if task.status == VERB_REQUIRED_STATUS[verb] then
+            targets[#targets + 1] = { path = path, lnum = lnum, old_line = line }
+        else
+            skipped = skipped + 1
+        end
+    end
+
+    local skipped_note = skipped > 0 and ("; skipped " .. skipped .. " not " .. VERB_REQUIRED_STATUS[verb]) or ""
+    if #targets == 0 then
+        vim.notify("[taskbuffer] nothing to change" .. skipped_note, vim.log.levels.WARN)
+        return false
+    end
+
+    local actions = require("taskbuffer.actions")
+    local edits, failure = {}, nil
+    for _, target in ipairs(targets) do
+        local ok, err = actions[method](target.path, target.lnum, ctx)
+        local new_line = M.read_line_from_file(target.path, target.lnum)
+        if not ok then
+            -- A verb is two writes (checkbox + marker); never leave half of one.
+            if new_line and new_line ~= target.old_line then
+                M.replace_line_in_file(target.path, target.lnum, target.old_line)
+            end
+            failure = target.path .. ":" .. target.lnum .. ": " .. tostring(err)
+            break
+        end
+        if new_line and new_line ~= target.old_line then
+            edits[#edits + 1] =
+                { filepath = target.path, linenumber = target.lnum, old_line = target.old_line, new_line = new_line }
+        end
+    end
+
+    if #edits > 0 then
+        require("taskbuffer.undo").push({ op = verb, edits = edits, timestamp = os.time() })
+    end
+    buffer.apply_local_change()
+    if failure then
+        vim.notify(
+            "[taskbuffer] "
+                .. BULK_VERB_PAST_TENSE[verb]
+                .. " "
+                .. #edits
+                .. " of "
+                .. task_count(#targets)
+                .. ", then failed at "
+                .. failure,
+            vim.log.levels.ERROR
+        )
+        return false
+    end
+    vim.notify(
+        "[taskbuffer] " .. BULK_VERB_PAST_TENSE[verb] .. " " .. task_count(#edits) .. skipped_note,
+        vim.log.levels.INFO
+    )
     return true
 end
 

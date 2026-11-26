@@ -112,7 +112,8 @@ In taskbuffer:
 | `<leader>tb` | Start timing the selected task |
 | `u` / `<C-r>` | Undo / redo a date change |
 
-Date changes also work on a visual selection in taskbuffer. The global
+Date changes, `<leader>tc`, `<leader>td`, `<leader>tx`, and `<leader>ti` also
+work on a visual selection in taskbuffer, as one undo step. The global
 `<leader>ev` mapping inserts a dated note entry. All mappings can be changed or
 disabled; see `:help taskbuffer-keybindings` for the complete list.
 
