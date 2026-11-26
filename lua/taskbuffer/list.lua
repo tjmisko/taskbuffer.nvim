@@ -28,13 +28,7 @@ local function render(ctx, data, view)
     if data.view_key == view_key then
         return data.rendered
     end
-    local open = {}
-    for _, task in ipairs(data.tasks) do
-        async.checkpoint()
-        if task.status == "open" then
-            open[#open + 1] = task
-        end
-    end
+    local open = data.open
     local output = profile.measure("format", view and format.format_view or format.format_taskfile, open, ctx.now, {
         markers = ctx.markers,
         ignore_undated = ctx.ignore_undated,

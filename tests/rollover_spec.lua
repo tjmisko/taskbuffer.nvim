@@ -83,36 +83,38 @@ describe("incremental list rendering", function()
         assert.are.equal(row - 1, changes[1][3])
     end)
 
-    it("should publish a local change within 20 ms at 10k tasks", function()
+    it("should publish a local change within 15 ms at 10k tasks in 10k files", function()
         local files = {}
-        for file = 1, 100 do
-            local entries = {}
-            for number = 1, 100 do
-                entries[number] = ("- [ ] Task %d-%d (@[[2026-02-%02d]]) #t%d"):format(
-                    file,
-                    number,
-                    (number % 27) + 1,
-                    number % 7
-                )
-            end
-            files[("n%03d.md"):format(file)] = entries
+        -- Many small files: the shape where per-file index cost dominates.
+        for file = 1, 10000 do
+            files[("d%02d/n%05d.md"):format(file % 50, file)] = {
+                ("- [ ] Task %d-1 (@[[2026-02-%02d]]) #t%d"):format(file, (file % 27) + 1, file % 7),
+            }
         end
+        for dirnum = 0, 49 do
+            vim.fn.mkdir(("%s/d%02d"):format(dir, dirnum), "p")
+        end
+        local entries = {}
+        for number = 1, 5 do
+            entries[number] = ("- [ ] Probe %d (@[[2026-02-10]])"):format(number)
+        end
+        files["n050.md"] = entries
         setup_vault(files)
         open_tasks()
-        assert.is_true(#lines() > 10000)
+        assert.is_true(#lines() > 9000)
         local path = dir .. "/n050.md"
         local samples = {}
         for round = 1, 5 do
             local data = source.read(path)
-            local rewritten = data:gsub("%- %[ %] Task 50%-" .. round .. " ", "- [x] Task 50-" .. round .. " ", 1)
+            local rewritten = data:gsub("%- %[ %] Probe " .. round .. " ", "- [x] Probe " .. round .. " ", 1)
             assert.is_true(source.write(path, rewritten))
             local started = vim.uv.hrtime()
             buffer.apply_local_change()
             samples[#samples + 1] = (vim.uv.hrtime() - started) / 1e6
-            assert.is_nil(text():find("Task 50-" .. round .. " ", 1, true))
+            assert.is_nil(text():find("Probe " .. round .. " ", 1, true))
         end
         table.sort(samples)
-        assert.is_true(samples[3] < 20, "median local publish took " .. samples[3] .. " ms")
+        assert.is_true(samples[3] < 15, "median local publish took " .. samples[3] .. " ms")
     end)
 
     it("should move a Today task to Overdue at midnight without reading disk", function()

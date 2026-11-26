@@ -174,7 +174,8 @@ markers to your code. See `:help taskbuffer-annotations` for pattern details.
 Taskbuffer indexes `.md` files and the extensions of your annotation rules,
 skipping hidden files and directories and any directory named in `exclude`
 (default `{ "node_modules", "target", "dist", "build" }`). Symlinks found while
-walking a source are not followed.
+walking a source are not followed. `.gitignore` and `.ignore` files are not
+read (the old ripgrep scan honored them); add ignored directories to `exclude`.
 
 The [full reference](doc/taskbuffer.txt) is also available inside Neovim:
 

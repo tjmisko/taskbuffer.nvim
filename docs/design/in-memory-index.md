@@ -75,6 +75,8 @@ File I/O is cheap. The cost is redoing all parse/format work after each edit.
   - skips every entry whose name starts with `.` (files and dirs);
   - skips directories whose basename is in `config.exclude` (new option,
     default `{ "node_modules", "target", "dist", "build" }`);
+  - does NOT honor .gitignore/.ignore (a deliberate change from the rg scan;
+    users list ignored directory names in `exclude`);
   - does not follow symlinks found during recursion (rg's default today);
   - keeps files ending in `.md`, plus the extensions of configured
     `annotations` rules. Other extensions are not indexed (today rg reads every

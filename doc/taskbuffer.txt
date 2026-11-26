@@ -84,6 +84,8 @@ option not specified falls back to its default value.
 
       -- Directory names skipped while walking sources. Hidden files and
       -- directories are always skipped; symlinks inside sources are not followed.
+      -- .gitignore/.ignore files are NOT honored; list ignored directory
+      -- names here instead.
       exclude = { "node_modules", "target", "dist", "build" },
 
       -- Optional code annotation rules (see |taskbuffer-annotations|)

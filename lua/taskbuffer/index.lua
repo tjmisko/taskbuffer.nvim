@@ -62,14 +62,28 @@ function M.revision()
     return state and state.revision or 0
 end
 
----@return string[]
-function M.paths()
+--- Sorted path list, rebuilt only when a path was added or removed.
+local function sorted_paths(st)
+    if st.order then
+        return st.order
+    end
     local paths = {}
-    for path in pairs(state and state.files or {}) do
+    for path in pairs(st.files) do
         paths[#paths + 1] = path
     end
-    table.sort(paths)
+    async.sort(paths, function(a, b)
+        return a < b
+    end)
+    st.order = paths
     return paths
+end
+
+---@return string[]
+function M.paths()
+    if not state then
+        return {}
+    end
+    return vim.list_slice(sorted_paths(state))
 end
 
 ---@param path string
@@ -91,6 +105,15 @@ end
 local function bump(st)
     st.revision = st.revision + 1
     st.snapshot = nil
+end
+
+--- Assign a file entry; the sorted path list is stale only when the path is new or removed.
+local function set_entry(st, path, entry)
+    if (st.files[path] == nil) ~= (entry == nil) then
+        st.order = nil
+    end
+    st.files[path] = entry
+    bump(st)
 end
 
 local function read_file(path)
@@ -201,8 +224,7 @@ local function refresh(st)
         local existing = st.files[path]
         if not version then
             if existing then
-                st.files[path] = nil
-                bump(st)
+                set_entry(st, path, nil)
             end
             seen[path] = nil
         elseif source.overlay[path] then
@@ -210,15 +232,25 @@ local function refresh(st)
             seen[path] = true
         elseif not existing or existing.version ~= version then
             local data = read_file(path)
-            st.files[path] = data and M.parse_file(path, data, st.ctx, version) or empty_entry(version)
-            bump(st)
+            local entry = data and M.parse_file(path, data, st.ctx, version) or empty_entry(version)
+            -- parse_file may yield; an overlay write or another sweep may have
+            -- replaced this file meanwhile, and the stale disk parse must not win.
+            if state ~= st then
+                return M.RESET_ERROR
+            end
+            if not source.overlay[path] and st.files[path] == existing then
+                set_entry(st, path, entry)
+            end
         end
     end
+    local stale = {}
     for path in pairs(st.files) do
         if not seen[path] then
-            st.files[path] = nil
-            bump(st)
+            stale[#stale + 1] = path
         end
+    end
+    for _, path in ipairs(stale) do
+        set_entry(st, path, nil)
     end
     st.ready = true
     return nil
@@ -262,13 +294,11 @@ function M.update_file(path, data, version)
     path = canonical(path)
     if data == nil then
         if st.files[path] then
-            st.files[path] = nil
-            bump(st)
+            set_entry(st, path, nil)
         end
         return true
     end
-    st.files[path] = M.parse_file(path, data, st.ctx, version or source.version(path))
-    bump(st)
+    set_entry(st, path, M.parse_file(path, data, st.ctx, version or source.version(path)))
     return true
 end
 
@@ -298,7 +328,44 @@ function M.update_file_from_disk(path)
     return M.update_file(path, data, version)
 end
 
+--- Open tasks of an entry, computed once per entry (entries are replaced, never mutated).
+local function entry_open(entry)
+    if entry.open then
+        return entry.open
+    end
+    local open = {}
+    for _, task in ipairs(entry.tasks) do
+        if task.status == "open" then
+            open[#open + 1] = task
+        end
+    end
+    entry.open = open
+    return open
+end
+
+--- Tags of the entry's open tasks, computed once per entry.
+local function entry_open_tags(entry)
+    if entry.open_tags then
+        return entry.open_tags
+    end
+    local seen, tags = {}, {}
+    for _, task in ipairs(entry.all) do
+        if task.status == "open" then
+            for _, tag in ipairs(task.tags or {}) do
+                if not seen[tag] then
+                    seen[tag] = true
+                    tags[#tags + 1] = tag
+                end
+            end
+        end
+    end
+    entry.open_tags = tags
+    return tags
+end
+
 --- Immutable-by-convention view of the index consumed by list.lua.
+--- Published buffers keep old snapshots, so a new one is always built fresh,
+--- but from per-entry caches so the pass does no per-task work.
 ---@param st TaskIndexState|nil
 ---@return table data
 function M.snapshot(st)
@@ -307,37 +374,40 @@ function M.snapshot(st)
         return st.snapshot
     end
     local revision = st.revision
-    local paths = {}
-    for path in pairs(st.files) do
-        paths[#paths + 1] = path
-    end
-    async.sort(paths, function(a, b)
-        return a < b
-    end)
-    local data = { tasks = {}, originals = {}, annotations = {}, versions = {}, errors = st.ctx.strict and {} or nil }
+    local paths = sorted_paths(st)
+    local data = {
+        tasks = {},
+        open = {},
+        originals = {},
+        annotations = {},
+        versions = {},
+        errors = st.ctx.strict and {} or nil,
+    }
+    local tasks, open = data.tasks, data.open
+    local task_count, open_count = 0, 0
     local seen = {}
-    local function add_tags(tasks, open_only)
-        for _, task in ipairs(tasks) do
-            if not open_only or task.status == "open" then
-                for _, tag in ipairs(task.tags or {}) do
-                    seen[tag] = true
-                end
-            end
-        end
-    end
     local projects = {}
     for _, path in ipairs(paths) do
         async.checkpoint()
         local entry = st.files[path]
         data.versions[path] = entry.version
-        vim.list_extend(data.tasks, entry.tasks)
+        for _, task in ipairs(entry.tasks) do
+            task_count = task_count + 1
+            tasks[task_count] = task
+        end
+        for _, task in ipairs(entry_open(entry)) do
+            open_count = open_count + 1
+            open[open_count] = task
+        end
         if next(entry.originals) then
             data.originals[path] = entry.originals
         end
         if next(entry.annotations) then
             data.annotations[path] = entry.annotations
         end
-        add_tags(entry.all, true)
+        for _, tag in ipairs(entry_open_tags(entry)) do
+            seen[tag] = true
+        end
         if entry.project then
             projects[#projects + 1] = entry.project
         end
@@ -346,9 +416,14 @@ function M.snapshot(st)
         end
     end
     for _, task in ipairs(projects) do
-        data.tasks[#data.tasks + 1] = task
+        tasks[#tasks + 1] = task
+        if task.status == "open" then
+            open[#open + 1] = task
+        end
+        for _, tag in ipairs(task.tags or {}) do
+            seen[tag] = true
+        end
     end
-    add_tags(projects, false)
     local tags = {}
     for tag in pairs(seen) do
         tags[#tags + 1] = tag

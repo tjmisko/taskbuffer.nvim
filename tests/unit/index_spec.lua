@@ -354,4 +354,49 @@ describe("index maintenance", function()
         vim.fn.delete(outside)
         assert.are.equal(revision, index.revision())
     end)
+
+    it("should keep an overlay write staged during a sweep's parse when the sweep resumes", function()
+        local path = write("race.md", { "- [ ] Old task" })
+        apply()
+        local source = require("taskbuffer.source")
+        local ctx = context.build_context(config.values, { now = now })
+        index.refresh_sync(ctx)
+        bump_mtime(path)
+        local original_parse = index.parse_file
+        local staged = false
+        index.parse_file = function(...)
+            local entry = original_parse(...)
+            if not staged then
+                staged = true
+                assert.is_true(source.write(path, "- [ ] New task\n"))
+            end
+            return entry
+        end
+        local ok, err = pcall(index.refresh_sync, ctx)
+        index.parse_file = original_parse
+        assert.is_true(ok, tostring(err))
+        local entry = index.entry(path)
+        assert.are.equal("New task", entry.tasks[1].body)
+        vim.wait(2000, function()
+            return source.overlay[path] == nil
+        end, 5)
+    end)
+
+    it("should expose open tasks and sorted tags in the snapshot after an in-place file update", function()
+        local first = write("a.md", { "- [ ] One #beta", "- [x] Two #gamma" })
+        write("b.md", { "- [ ] Three #alpha" })
+        apply()
+        local ctx = context.build_context(config.values, { now = now })
+        local data = index.refresh_sync(ctx)
+        assert.are.equal(2, #data.open)
+        assert.are.same({ "alpha", "beta" }, data.tags)
+        index.update_file(first, "- [ ] One #delta\n- [ ] Two #beta\n")
+        local updated = index.current()
+        assert.are.equal(3, #updated.open)
+        assert.are.same({ "alpha", "beta", "delta" }, updated.tags)
+        assert.are.same(index.paths(), vim.fn.sort(index.paths()))
+        index.update_file(first, nil)
+        assert.are.equal(1, #index.current().open)
+        assert.are.equal(1, #index.paths())
+    end)
 end)
