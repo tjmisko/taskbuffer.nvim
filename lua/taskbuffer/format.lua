@@ -213,7 +213,7 @@ function M.format_task_text(task, opts)
         pad(date, 10),
         " | ",
         pad(task.due_time or "", 5),
-        " | ",
+        " |",
         pad(task.duration or "", 4, true),
         " | ",
         task.body,

@@ -19,7 +19,7 @@ describe("visible task rows", function()
         local a, b = task("/work/a.md", 2), task("/personal/b.md", 5)
         local view = format.format_view({ a, b }, noon)
         assert.are.same(
-            { "# Someday", "           |       |      | Same task", "           |       |      | Same task" },
+            { "# Someday", "           |       |     | Same task", "           |       |     | Same task" },
             view.lines
         )
         assert.is_nil(view.rows[1])
@@ -57,7 +57,7 @@ describe("visible task rows", function()
             markers = { { kind = "start", date = "2026-09-11", time = "14:00" } },
         })
         assert.are.equal(
-            "11/09/2026 | 14:30 |  15m | Implement 界 #code ::start [[2026-09-11]] 14:00",
+            "11/09/2026 | 14:30 | 15m | Implement 界 #code ::start [[2026-09-11]] 14:00",
             format.format_task_text(t, { date_strftime = "%d/%m/%Y", markers = true })
         )
         assert.is_nil(format.format_task_text(t):find("::start", 1, true))
