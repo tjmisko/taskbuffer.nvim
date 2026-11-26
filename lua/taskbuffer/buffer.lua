@@ -234,7 +234,7 @@ function M.validate_source(path, lnum)
         or not expected
         or not version
         or line_changed
-        or (expected ~= "true:" .. version and expected ~= "false:" .. version)
+        or expected ~= version
     then
         vim.notify(
             "[taskbuffer] task list is loading or stale; run :Tasks and retry after it refreshes",
@@ -300,9 +300,6 @@ function M.refresh_taskfile_async(callback, opts)
     local config = require("taskbuffer.config").values
     local runtime = list_opts(opts.reuse)
     runtime.force = opts.force
-    if opts.force and package.loaded["taskbuffer.list"] then
-        require("taskbuffer.list").invalidate()
-    end
     local key = vim.json.encode({ runtime.markers, runtime.ignore_undated, runtime.tags })
     if active and active.buf == buf and active.key == key and active.config == config and not opts.force then
         if callback then

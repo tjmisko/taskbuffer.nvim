@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`taskbuffer.nvim` is a neovim plugin for managing a personal task/time-tracking system built on Obsidian-style markdown notes. Tasks are defined inline in `.md` files using a specific syntax, scanned with `rg` (ripgrep), parsed and formatted entirely in Lua, and displayed in a custom "taskfile" buffer format. There is no build step and no external binary.
+`taskbuffer.nvim` is a neovim plugin for managing a personal task/time-tracking system built on Obsidian-style markdown notes. Tasks are defined inline in `.md` files using a specific syntax, walked and indexed in memory, parsed and formatted entirely in Lua, and displayed in a custom "taskfile" buffer format. There is no build step and no external binary.
 
 ## Build & Test
 
@@ -18,17 +18,18 @@ make test-e2e-all
 make lint          # stylua --check + selene
 ```
 
-Requires `rg` (ripgrep) on PATH (falls back to `grep` if absent).
+No external programs are required: discovery is a pure-Lua walk (`walk.lua`).
 
 ## Architecture
 
-The plugin is pure Lua. The pipeline runs in-process — no Go binary, no subprocess except `rg` for scanning.
+The plugin is pure Lua. The pipeline runs in-process — no Go binary, no subprocess.
 
-**Pipeline**: `scan` (rg --json) → `parse` (regex parsing) → `format` (bucket by horizon) → taskfile buffer
+**Pipeline**: `walk` (fs_scandir) → `index` (read + `parse` per file, cached by file version) → `format` (bucket by horizon) → taskfile buffer
 
 ### Lua pipeline (`lua/taskbuffer/`)
 
-- **`scan.lua`** — Runs `rg --json` against sources (sync + async), returns raw matches
+- **`walk.lua`** — Pure-Lua source discovery: glob expansion, recursion, hidden/`exclude`/symlink/binary rules
+- **`index.lua`** — In-memory index: `files[path]` entries, build/sweep (reparse changed versions), `update_file`, snapshot for `list.lua`
 - **`parse.lua`** — Parses raw matched lines into task tables
 - **`format.lua`** — Formats tasks into taskfile display (bucketed by date interval)
 - **`horizon.lua`** — Horizon specs, resolution, and default horizons
@@ -37,7 +38,7 @@ The plugin is pure Lua. The pipeline runs in-process — no Go binary, no subpro
 - **`mutate.lua`** — File mutation (append to line, check off task)
 - **`state.lua`** — Current task state (start/stop/complete tracking)
 - **`context.lua`** — Builds the shared context (config + runtime) for the pipeline
-- **`list.lua`** — In-process list/tags pipeline (orchestrates scan → parse → format)
+- **`list.lua`** — In-process list/tags pipeline (orchestrates index → format)
 - **`actions.lua`** — Mutating verbs (complete, defer, check, irrelevant, unset, stop)
 
 ### Lua plugin / UI (`lua/taskbuffer/`)
@@ -45,7 +46,7 @@ The plugin is pure Lua. The pipeline runs in-process — no Go binary, no subpro
 - **`init.lua`** — Setup(), public API entry points
 - **`config.lua`** — Defaults, validation, path expansion
 - **`buffer.lua`** — Taskfile buffer management, refresh, state tracking
-- **`autocmds.lua`** — BufEnter/BufLeave autocommands for taskfile refresh
+- **`autocmds.lua`** — BufEnter/BufLeave autocommands for taskfile refresh; BufWritePost/FocusGained keep the index current
 - **`keymaps.lua`** — Global, taskfile, and markdown keymaps
 - **`commands.lua`** — `:Tasks`, `:TasksClear`, `:TasksUndated` command registration
 - **`tags.lua`** — Telescope tag picker

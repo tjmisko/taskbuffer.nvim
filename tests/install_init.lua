@@ -32,7 +32,7 @@ local function check()
             lockfile = root .. "/lazy-lock.json",
         })
     end
-    assert(not package.loaded["taskbuffer.scan"], "install eagerly loaded scan code")
+    assert(not package.loaded["taskbuffer.index"], "install eagerly loaded index code")
     assert(not package.loaded["taskbuffer.source"], "install eagerly loaded mutation code")
     vim.cmd("Tasks")
     assert(

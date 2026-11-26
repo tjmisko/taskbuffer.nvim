@@ -1,541 +1,236 @@
--- Ported from go/scan_test.go, go/scan_multi_test.go, and the path/glob subset
--- of go/integration_test.go. These exercise real rg (and the grep fallback)
--- behavior, so the assertions are on the RawMatch[] contract (path/line/text)
--- rather than parsed Task fields.
---
--- IMPORTANT: fixtures are created under vim.fn.tempname() (an OS tempdir OUTSIDE
--- this worktree). The worktree lives under .worktrees/, which the parent repo
--- gitignores, and rg respects gitignore -> scanning a worktree path returns
--- ZERO matches. tempname() dirs have no .git/.gitignore ancestor, so rg behaves
--- normally there. This mirrors how the Go tests use t.TempDir().
+-- walk.lua: pure-Lua source discovery. Fixtures live under vim.fn.tempname().
 
-local scan = require("taskbuffer.scan")
+local walk = require("taskbuffer.walk")
+local async = require("taskbuffer.async")
 local uv = vim.uv or vim.loop
-
--- --- fixture helpers --------------------------------------------------------
 
 local function make_vault()
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, "p")
-    return dir
+    return assert(uv.fs_realpath(dir))
 end
 
 local function write_file(dir, rel, content)
     local path = dir .. "/" .. rel
     vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-    local fd = assert(io.open(path, "w"))
-    fd:write(content)
+    local fd = assert(io.open(path, "wb"))
+    fd:write(content or "- [ ] task\n")
     fd:close()
     return path
 end
 
-local function ctx(...)
-    return { sources = { ... } }
+local function relative(dir, files)
+    local result = {}
+    for _, path in ipairs(files) do
+        result[#result + 1] = path:sub(#dir + 2)
+    end
+    return result
 end
 
--- Find a match whose text contains the substring.
-local function find_text(matches, substr)
-    for _, m in ipairs(matches) do
-        if m.text:find(substr, 1, true) then
-            return m
-        end
-    end
-    return nil
+local function walked(dir, extra)
+    local ctx = vim.tbl_extend("force", { sources = { dir } }, extra or {})
+    local files, err = walk.walk(ctx)
+    assert.is_nil(err)
+    return relative(dir, files)
 end
 
--- Stable key for comparing two RawMatch lists across tools (rg vs grep order differs).
-local function normalize(matches)
-    local copy = {}
-    for i, m in ipairs(matches) do
-        copy[i] = m
-    end
-    table.sort(copy, function(a, b)
-        if a.path ~= b.path then
-            return a.path < b.path
+describe("walk.walk recursion rules", function()
+    it("should skip hidden files and directories when recursing", function()
+        local dir = make_vault()
+        write_file(dir, "visible.md")
+        write_file(dir, ".hidden.md")
+        write_file(dir, ".obsidian/plugin.md")
+        write_file(dir, "sub/.secret.md")
+        write_file(dir, "sub/kept.md")
+        assert.are.same({ "sub/kept.md", "visible.md" }, walked(dir))
+    end)
+
+    it("should skip directories named in exclude when recursing", function()
+        local dir = make_vault()
+        write_file(dir, "keep/a.md")
+        write_file(dir, "node_modules/pkg/readme.md")
+        write_file(dir, "deep/build/out.md")
+        write_file(dir, "custom/skipme/x.md")
+        assert.are.same({ "custom/skipme/x.md", "keep/a.md" }, walked(dir, { exclude = { "node_modules", "build" } }))
+        assert.are.same({ "keep/a.md" }, walked(dir, { exclude = { "node_modules", "build", "skipme", "deep" } }))
+    end)
+
+    it("should apply the default exclude list when the context sets none", function()
+        local dir = make_vault()
+        write_file(dir, "target/a.md")
+        write_file(dir, "dist/a.md")
+        write_file(dir, "ok/a.md")
+        assert.are.same({ "ok/a.md" }, walked(dir))
+    end)
+
+    it("should not follow symlinks found while recursing", function()
+        local dir = make_vault()
+        local outside = make_vault()
+        write_file(outside, "elsewhere.md")
+        write_file(dir, "real/a.md")
+        assert(uv.fs_symlink(outside, dir .. "/linked-dir"))
+        assert(uv.fs_symlink(outside .. "/elsewhere.md", dir .. "/linked-file.md"))
+        assert.are.same({ "real/a.md" }, walked(dir))
+    end)
+
+    it("should keep only markdown files and configured annotation extensions", function()
+        local dir = make_vault()
+        write_file(dir, "a.md")
+        write_file(dir, "b.txt")
+        write_file(dir, "c.rs")
+        write_file(dir, "d.py")
+        write_file(dir, "noextension")
+        assert.are.same({ "a.md" }, walked(dir))
+        assert.are.same({ "a.md", "c.rs" }, walked(dir, { annotations = { { extension = "rs", pattern = "(.*)" } } }))
+    end)
+
+    it("should detect binary contents when the first 8 KiB hold a NUL byte", function()
+        assert.is_true(walk.is_binary("- [ ] task\0more"))
+        assert.is_true(walk.is_binary(string.rep("a", 8000) .. "\0"))
+        assert.is_false(walk.is_binary(string.rep("a", 9000) .. "\0"))
+        assert.is_false(walk.is_binary("- [ ] plain\n"))
+    end)
+
+    it("should find deeply nested files and directories with spaces", function()
+        local dir = make_vault()
+        write_file(dir, "a/b/c/d/deep.md")
+        write_file(dir, "space dir/note.md")
+        assert.are.same({ "a/b/c/d/deep.md", "space dir/note.md" }, walked(dir))
+    end)
+
+    it("should return nothing when the directory is empty", function()
+        assert.are.same({}, walked(make_vault()))
+    end)
+
+    it("should return sorted absolute paths", function()
+        local dir = make_vault()
+        write_file(dir, "z.md")
+        write_file(dir, "a.md")
+        write_file(dir, "m/b.md")
+        local files = assert(walk.walk({ sources = { dir } }))
+        assert.are.same({ dir .. "/a.md", dir .. "/m/b.md", dir .. "/z.md" }, files)
+    end)
+
+    it("should work inside an async slice when the tree is large", function()
+        local dir = make_vault()
+        for i = 1, 60 do
+            write_file(dir, "d" .. i .. "/n.md")
         end
-        return a.line_number < b.line_number
-    end)
-    return copy
-end
-
--- ===========================================================================
--- scan_test.go
--- ===========================================================================
-
-describe("scan.scan — basic temp dir", function()
-    -- TestScan_FindsTasksInTempDir
-    it("finds all task lines across files, absolute paths, line>=1, nonempty text", function()
-        local dir = make_vault()
-        write_file(
-            dir,
-            "project.md",
-            "# Project\n"
-                .. "- [ ] First task (@[[2026-02-17]])\n"
-                .. "- [x] Done task (@[[2026-02-16]] 10:00)::complete [[2026-02-16]] 11:00\n"
-                .. "Some other content\n"
-        )
-        write_file(dir, "empty.md", "# Nothing here\n")
-        write_file(dir, "daily.md", "\t- [ ] Indented task <30m> (@[[2026-02-18]])\n")
-        write_file(dir, "someday.md", "- [ ] Investigate OOM Kill Root Cause\n" .. "- [x] Already done undated task\n")
-
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(5, #matches)
-        for _, m in ipairs(matches) do
-            assert.is_truthy(m.path:sub(1, 1) == "/", "path is absolute: " .. m.path)
-            assert.is_true(m.line_number >= 1)
-            assert.is_truthy(m.text ~= "")
-        end
-    end)
-
-    -- TestScan_EmptyDir / TestPath_EmptyDirectory
-    it("returns no matches and no error for an empty directory", function()
-        local dir = make_vault()
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(0, #matches)
-    end)
-
-    -- TestScan_NoMatchesInFile / TestPath_NoTasksInMarkdown
-    it("returns no matches and no error for a markdown file with no tasks", function()
-        local dir = make_vault()
-        write_file(dir, "notes.md", "No tasks here\n")
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(0, #matches)
-    end)
-end)
-
--- ===========================================================================
--- scan_multi_test.go
--- ===========================================================================
-
-describe("scan.scan — multiple sources", function()
-    -- TestScan_MultipleDirs
-    it("unions matches from two directories and preserves text", function()
-        local dir1 = make_vault()
-        local dir2 = make_vault()
-        write_file(dir1, "a.md", "- [ ] Task in dir1 (@[[2026-02-17]])\n")
-        write_file(dir2, "b.md", "- [ ] Task in dir2 (@[[2026-02-18]])\n")
-
-        local matches, err = scan.scan(ctx(dir1, dir2))
-        assert.is_nil(err)
-        assert.are.equal(2, #matches)
-        assert.is_truthy(find_text(matches, "Task in dir1"))
-        assert.is_truthy(find_text(matches, "Task in dir2"))
-    end)
-end)
-
-describe("scan.deduplicate_paths", function()
-    -- TestDeduplicatePaths_Nested
-    it("drops a nested path in favor of its parent", function()
-        local dir = make_vault()
-        local sub = dir .. "/sub"
-        vim.fn.mkdir(sub, "p")
-        local got = scan.deduplicate_paths({ dir, sub })
-        assert.are.equal(1, #got)
-        assert.are.equal(uv.fs_realpath(dir), got[1])
-    end)
-
-    -- TestDeduplicatePaths_Disjoint
-    it("keeps two disjoint paths", function()
-        local dir1 = make_vault()
-        local dir2 = make_vault()
-        local got = scan.deduplicate_paths({ dir1, dir2 })
-        assert.are.equal(2, #got)
-    end)
-
-    it("collapses exact duplicates to one", function()
-        local dir = make_vault()
-        local got = scan.deduplicate_paths({ dir, dir })
-        assert.are.equal(1, #got)
-    end)
-
-    it("keeps a nonexistent path as-is (realpath fails -> original)", function()
-        local got = scan.deduplicate_paths({ "/nonexistent/path/xyz" })
-        assert.are.equal(1, #got)
-        assert.are.equal("/nonexistent/path/xyz", got[1])
-    end)
-end)
-
-describe("scan.expand_globs", function()
-    -- TestScan_GlobExpansion (glob matches a directory)
-    it("expands a `*` glob to matching entries", function()
-        local dir = make_vault()
-        vim.fn.mkdir(dir .. "/notes", "p")
-        local got = scan.expand_globs({ dir .. "/note*" })
-        assert.are.equal(1, #got)
-        assert.are.equal(uv.fs_realpath(dir .. "/notes"), got[1])
-    end)
-
-    it("passes a plain (non-glob) path through verbatim", function()
-        local dir = make_vault()
-        local got = scan.expand_globs({ dir })
-        assert.are.equal(1, #got)
-        assert.are.equal(uv.fs_realpath(dir), got[1])
-    end)
-
-    it("a no-match glob yields nothing", function()
-        local dir = make_vault()
-        local got = scan.expand_globs({ dir .. "/nonexist-*" })
-        assert.are.equal(0, #got)
-    end)
-end)
-
--- ===========================================================================
--- integration_test.go — path edge cases
--- ===========================================================================
-
-describe("scan.scan — path edge cases", function()
-    -- TestPath_SpacesInPath
-    it("scans a directory with spaces in its name (argv array, no quoting)", function()
-        local dir = make_vault()
-        write_file(dir, "space dir/note.md", "- [ ] Task in space dir (@[[2026-02-17]])\n")
-        local matches, err = scan.scan(ctx(dir .. "/space dir"))
-        assert.is_nil(err)
-        assert.are.equal(1, #matches)
-        assert.is_truthy(find_text(matches, "Task in space dir"))
-    end)
-
-    -- TestPath_DeeplyNested
-    it("finds deeply nested tasks via recursive walk", function()
-        local dir = make_vault()
-        write_file(dir, "a/b/c/d/deep.md", "- [ ] Deeply nested task\n")
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.is_truthy(find_text(matches, "Deeply nested task"))
-    end)
-
-    -- TestPath_NonExistentPath
-    it("returns an error for a nonexistent path (rg exit 2 with stderr)", function()
-        local matches, err = scan.scan(ctx("/nonexistent/path/that/does/not/exist"))
-        assert.is_not_nil(err)
-        assert.is_nil(matches)
-    end)
-
-    -- TestPath_SymlinkDedup
-    it("dedups a real dir and a symlink to it down to one scan", function()
-        local dir = make_vault()
-        local real = dir .. "/symlink-target"
-        vim.fn.mkdir(real, "p")
-        write_file(dir, "symlink-target/t.md", "- [ ] Symlinked task\n")
-        local link = dir .. "/linked"
-        assert(uv.fs_symlink(real, link))
-
-        local matches, err = scan.scan(ctx(real, link))
-        assert.is_nil(err)
-        assert.are.equal(1, #matches)
-    end)
-
-    -- TestPath_OverlappingNested
-    it("dedups overlapping parent+nested sources to the parent", function()
-        local dir = make_vault()
-        write_file(dir, "deeply/nested/dir/note.md", "- [ ] Overlap task\n")
-        local matches, err = scan.scan(ctx(dir .. "/deeply", dir .. "/deeply/nested/dir"))
-        assert.is_nil(err)
-        assert.are.equal(1, #matches)
-    end)
-
-    -- TestPath_ExactDuplicates
-    it("dedups an exactly duplicated source but still returns all its tasks", function()
-        local dir = make_vault()
-        write_file(dir, "normal/n.md", "- [ ] Dup task one\n- [ ] Dup task two\n")
-        local matches, err = scan.scan(ctx(dir .. "/normal", dir .. "/normal"))
-        assert.is_nil(err)
-        assert.are.equal(2, #matches)
-    end)
-
-    -- TestPath_ParentScansAll (>= 5; rg does not follow the `linked` symlink)
-    it("scanning the parent finds at least 5 tasks and does not follow symlinks", function()
-        local dir = make_vault()
-        write_file(dir, "normal/a.md", "- [ ] Normal one\n- [ ] Normal two\n")
-        write_file(dir, "space dir/b.md", "- [ ] Spaced\n")
-        write_file(dir, "deeply/nested/dir/c.md", "- [ ] Nested\n")
-        write_file(dir, "symlink-target/d.md", "- [ ] Target\n")
-        assert(uv.fs_symlink(dir .. "/symlink-target", dir .. "/linked"))
-
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.is_true(#matches >= 5, "got " .. #matches .. " matches, want >= 5")
-    end)
-end)
-
--- ===========================================================================
--- integration_test.go — glob vault
--- ===========================================================================
-
-describe("scan.scan — globs", function()
-    local function glob_vault()
-        local dir = make_vault()
-        write_file(dir, "notes-1/a.md", "- [ ] Glob one\n")
-        write_file(dir, "notes-2/b.md", "- [ ] Glob two\n")
-        write_file(dir, "notes-3/c.md", "- [ ] Glob three\n")
-        write_file(dir, "extra.md", "- [ ] Glob extra\n")
-        return dir
-    end
-
-    -- TestGlob_StarWildcard
-    it("notes-* matches the three notes dirs", function()
-        local dir = glob_vault()
-        local matches, err = scan.scan(ctx(dir .. "/notes-*"))
-        assert.is_nil(err)
-        assert.are.equal(3, #matches)
-    end)
-
-    -- TestGlob_QuestionMark
-    it("notes-? matches the three single-char-suffixed dirs", function()
-        local dir = glob_vault()
-        local matches, err = scan.scan(ctx(dir .. "/notes-?"))
-        assert.is_nil(err)
-        assert.are.equal(3, #matches)
-    end)
-
-    -- TestGlob_MatchAll
-    it("* matches every entry in the vault", function()
-        local dir = glob_vault()
-        local matches, err = scan.scan(ctx(dir .. "/*"))
-        assert.is_nil(err)
-        assert.are.equal(4, #matches)
-    end)
-
-    -- TestGlob_NoMatch
-    it("a no-match glob yields no matches and no rg invocation", function()
-        local dir = glob_vault()
-        local matches, err = scan.scan(ctx(dir .. "/nonexist-*"))
-        assert.is_nil(err)
-        assert.are.equal(0, #matches)
-    end)
-end)
-
--- ===========================================================================
--- Content robustness — the NUL-split parser (no Go analogue; protects D2/D4)
--- ===========================================================================
-
-describe("scan.scan — content robustness", function()
-    it("preserves arbitrary colons and unicode in the matched text", function()
-        local dir = make_vault()
-        local body = "- [ ] body: with: colons cafe\xc3\xa9 12:30"
-        write_file(dir, "weird.md", body .. "\n")
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(1, #matches)
-        assert.are.equal(body, matches[1].text)
-    end)
-
-    it("matches indented tasks (leading tab/spaces)", function()
-        local dir = make_vault()
-        write_file(dir, "ind.md", "\t- [ ] Tabbed\n    - [ ] Spaced\n")
-        local matches, err = scan.scan(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(2, #matches)
-    end)
-end)
-
--- ===========================================================================
--- grep fallback equivalence (the only coverage for the grep path)
--- ===========================================================================
-
-describe("scan.scan — rg vs grep equivalence", function()
-    it("produces identical RawMatch lists with rg and with the grep fallback", function()
-        if vim.fn.executable("grep") ~= 1 then
-            pending("grep not available")
-            return
-        end
-        local dir = make_vault()
-        write_file(dir, "a.md", "- [ ] alpha: with colon\n- [x] beta\nplain line\n")
-        write_file(dir, "sub/b.md", "\t- [ ] gamma\n")
-
-        local rg_matches = scan.scan(ctx(dir))
-
-        local saved = scan._have_rg
-        scan._have_rg = function()
-            return false
-        end
-        local grep_matches = scan.scan(ctx(dir))
-        scan._have_rg = saved
-
-        assert.are.same(normalize(rg_matches), normalize(grep_matches))
-        assert.are.equal(3, #rg_matches)
-    end)
-end)
-
--- ===========================================================================
--- Async scan
--- ===========================================================================
-
-describe("scan.scan_async", function()
-    it("delivers matches via the callback", function()
-        local dir = make_vault()
-        write_file(dir, "a.md", "- [ ] async task\n- [x] async done\n")
-
-        local done, result, cb_err
-        scan.scan_async(ctx(dir), function(matches, err)
-            result, cb_err, done = matches, err, true
-        end)
-        vim.wait(5000, function()
-            return done
-        end)
-
-        assert.is_true(done)
-        assert.is_nil(cb_err)
-        assert.are.equal(2, #result)
-    end)
-
-    it("delivers empty result for empty sources without invoking rg", function()
-        local done, result
-        scan.scan_async(ctx(), function(matches)
-            result, done = matches, true
-        end)
-        vim.wait(2000, function()
-            return done
-        end)
-        assert.is_true(done)
-        assert.are.equal(0, #result)
-    end)
-end)
-
--- ===========================================================================
--- scan_project_paths (rg -l candidate scan; paths only)
--- ===========================================================================
-
-describe("scan.scan_project_paths", function()
-    it("returns md files whose content contains a `- project` line", function()
-        local dir = make_vault()
-        write_file(dir, "proj.md", "---\ntags:\n  - project\ndue: 2026-07-01\n---\n# Proj\n")
-        write_file(dir, "other.md", "- [ ] not a project\n")
-
-        local files, err = scan.scan_project_paths(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(1, #files)
-        assert.is_truthy(files[1]:find("proj.md", 1, true))
-    end)
-
-    it("returns empty (no error) when nothing matches", function()
-        local dir = make_vault()
-        write_file(dir, "x.md", "- [ ] plain task\n")
-        local files, err = scan.scan_project_paths(ctx(dir))
-        assert.is_nil(err)
-        assert.are.equal(0, #files)
-    end)
-
-    it("errors on a nonexistent path (no exit-2 special case, unlike scan)", function()
-        local files, err = scan.scan_project_paths(ctx("/nonexistent/path/xyz"))
-        assert.is_not_nil(err)
-        assert.is_nil(files)
-    end)
-end)
-
--- ===========================================================================
--- build_pattern (overview D1)
--- ===========================================================================
-
-describe("scan.build_pattern", function()
-    it("returns the default pattern for nil/empty checkbox config", function()
-        assert.are.equal(scan.DEFAULT_PATTERN, scan.build_pattern(nil))
-        assert.are.equal(scan.DEFAULT_PATTERN, scan.build_pattern({}))
-    end)
-
-    it("escapes regex metachars and sorts the alternation longest-first", function()
-        local p = scan.build_pattern({ open = "- [ ]", cancelled = "- [-]", done = "- [x]" })
-        -- Equal-length literals; ties break alphabetically: space < '-' < 'x'.
-        assert.are.equal("- \\[ \\]|- \\[-\\]|- \\[x\\]", p)
-    end)
-
-    it("dedups identical escaped literals", function()
-        local p = scan.build_pattern({ a = "- [x]", b = "- [x]" })
-        assert.are.equal("- \\[x\\]", p)
-    end)
-
-    it("skips whitespace-only entries", function()
-        local p = scan.build_pattern({ a = "   ", b = "- [x]" })
-        assert.are.equal("- \\[x\\]", p)
-    end)
-end)
-
-describe("async process lifecycle", function()
-    local system
-    local dir
-    before_each(function()
-        system = vim.system
-        dir = make_vault()
-    end)
-    after_each(function()
-        vim.system = system
-        vim.fn.delete(dir, "rf")
-    end)
-
-    it("reports spawn failures on the main loop without throwing", function()
-        vim.system = function()
-            error("cannot spawn")
-        end
-        local done, failure = false, nil
-        scan.scan_async(ctx(dir), function(_, err)
-            assert.is_false(vim.in_fast_event())
-            done, failure = true, err
-        end)
-        assert.is_false(done)
-        assert.is_true(vim.wait(1000, function()
-            return done
-        end, 5))
-        assert.is_truthy(failure:find("cannot spawn", 1, true))
-    end)
-
-    it("kills a cancelled process and ignores its eventual exit", function()
-        local exited, killed, called
-        vim.system = function(_, _, cb)
-            exited = cb
-            return {
-                kill = function(_, signal)
-                    killed = signal
-                end,
-            }
-        end
-        local cancel = scan.scan_project_paths_async(ctx(dir), function()
-            called = true
-        end)
-        cancel()
-        assert.are.equal(15, killed)
-        exited({ code = 0, stdout = dir .. "/project.md\n" })
-        vim.wait(20, function()
-            return false
-        end, 5)
-        assert.is_nil(called)
-    end)
-
-    it("matches synchronous project discovery and its no-match/error semantics", function()
-        write_file(dir, "project.md", "---\ntags:\n  - project\ndue: 2026-09-11\n---\n")
-        local expected = scan.scan_project_paths(ctx(dir))
-        local done = false
-        scan.scan_project_paths_async(ctx(dir), function(files, err)
-            assert.is_false(vim.in_fast_event())
-            assert.is_nil(err)
-            assert.are.same(expected, files)
-            done = true
+        local result, done
+        async.run(function()
+            return (walk.walk({ sources = { dir } }))
+        end, function(value)
+            result, done = value, true
         end)
         assert.is_true(vim.wait(5000, function()
             return done
         end, 5))
+        assert.are.equal(60, #result)
     end)
 end)
 
-describe("single-file sources", function()
-    for _, fallback in ipairs({ false, true }) do
-        it("keeps filename prefixes with " .. (fallback and "grep" or "rg"), function()
-            local dir = make_vault()
-            local path = write_file(dir, "single.md", "- [ ] Only task\n")
-            local original = scan._have_rg
-            if fallback then
-                scan._have_rg = function()
-                    return false
-                end
-            end
-            local succeeded, matches, err = pcall(scan.scan, ctx(path))
-            scan._have_rg = original
-            assert.is_true(succeeded)
-            assert.is_nil(err)
-            assert.are.equal(1, #matches)
-            assert.are.equal(uv.fs_realpath(path), matches[1].path)
-            assert.are.equal(1, matches[1].line_number)
-        end)
-    end
+describe("walk.walk sources", function()
+    it("should pass a single-file source through when it has any extension or hidden name", function()
+        local dir = make_vault()
+        local hidden = write_file(dir, ".dot.txt")
+        local files = assert(walk.walk({ sources = { hidden } }))
+        assert.are.same({ uv.fs_realpath(hidden) }, files)
+    end)
+
+    it("should return an error when a source does not exist", function()
+        local files, err = walk.walk({ sources = { "/nonexistent/path/that/does/not/exist" } })
+        assert.is_nil(files)
+        assert.is_truthy(err:find("not found", 1, true))
+    end)
+
+    it("should return nothing and no error when there are no sources", function()
+        local files, err = walk.walk({ sources = {} })
+        assert.is_nil(err)
+        assert.are.same({}, files)
+    end)
+
+    it("should union two directories when both are sources", function()
+        local one, two = make_vault(), make_vault()
+        write_file(one, "a.md")
+        write_file(two, "b.md")
+        local files = assert(walk.walk({ sources = { one, two } }))
+        assert.are.equal(2, #files)
+    end)
+
+    it("should expand * and ? globs to matching directories", function()
+        local dir = make_vault()
+        write_file(dir, "notes-1/a.md")
+        write_file(dir, "notes-2/b.md")
+        write_file(dir, "notes-3/c.md")
+        write_file(dir, "extra.md")
+        assert.are.equal(3, #assert(walk.walk({ sources = { dir .. "/notes-*" } })))
+        assert.are.equal(3, #assert(walk.walk({ sources = { dir .. "/notes-?" } })))
+        assert.are.equal(4, #assert(walk.walk({ sources = { dir .. "/*" } })))
+        assert.are.equal(0, #assert(walk.walk({ sources = { dir .. "/nonexist-*" } })))
+    end)
+
+    it("should not treat [ as a glob character", function()
+        local dir = make_vault()
+        local path = write_file(dir, "[a].md")
+        assert.are.same({ uv.fs_realpath(path) }, assert(walk.walk({ sources = { path } })))
+    end)
+
+    it("should dedup a real directory and a symlink to it", function()
+        local dir = make_vault()
+        local real = dir .. "/symlink-target"
+        write_file(dir, "symlink-target/t.md")
+        assert(uv.fs_symlink(real, dir .. "/linked"))
+        assert.are.equal(1, #assert(walk.walk({ sources = { real, dir .. "/linked" } })))
+    end)
+
+    it("should dedup overlapping parent and nested sources to the parent", function()
+        local dir = make_vault()
+        write_file(dir, "deeply/nested/dir/note.md")
+        assert.are.equal(1, #assert(walk.walk({ sources = { dir .. "/deeply", dir .. "/deeply/nested/dir" } })))
+    end)
+
+    it("should return each file once when a source is duplicated exactly", function()
+        local dir = make_vault()
+        write_file(dir, "normal/n.md")
+        assert.are.equal(1, #assert(walk.walk({ sources = { dir .. "/normal", dir .. "/normal" } })))
+    end)
+
+    it("should find files below the parent without following the linked directory", function()
+        local dir = make_vault()
+        write_file(dir, "normal/a.md")
+        write_file(dir, "symlink-target/d.md")
+        assert(uv.fs_symlink(dir .. "/symlink-target", dir .. "/linked"))
+        assert.are.same({ "normal/a.md", "symlink-target/d.md" }, walked(dir))
+    end)
+end)
+
+describe("walk.deduplicate_paths", function()
+    it("should drop a nested path in favor of its parent", function()
+        local dir = make_vault()
+        vim.fn.mkdir(dir .. "/sub", "p")
+        assert.are.same({ dir }, walk.deduplicate_paths({ dir, dir .. "/sub" }))
+    end)
+
+    it("should not let /a/b absorb /a/bcd", function()
+        local dir = make_vault()
+        vim.fn.mkdir(dir .. "/b", "p")
+        vim.fn.mkdir(dir .. "/bcd", "p")
+        assert.are.equal(2, #walk.deduplicate_paths({ dir .. "/b", dir .. "/bcd" }))
+    end)
+
+    it("should keep a nonexistent path as given", function()
+        assert.are.same({ "/nonexistent/path/xyz" }, walk.deduplicate_paths({ "/nonexistent/path/xyz" }))
+    end)
+end)
+
+describe("walk.accepts_below", function()
+    it("should reject paths outside the root, hidden components, excluded directories, and other extensions", function()
+        local ctx = { exclude = { "build" } }
+        assert.is_true(walk.accepts_below("/r/a/b.md", "/r", ctx))
+        assert.is_false(walk.accepts_below("/other/b.md", "/r", ctx))
+        assert.is_false(walk.accepts_below("/rx/b.md", "/r", ctx))
+        assert.is_false(walk.accepts_below("/r/.git/b.md", "/r", ctx))
+        assert.is_false(walk.accepts_below("/r/build/b.md", "/r", ctx))
+        assert.is_false(walk.accepts_below("/r/a/b.txt", "/r", ctx))
+    end)
 end)

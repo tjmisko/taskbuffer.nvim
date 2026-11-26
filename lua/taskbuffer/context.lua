@@ -3,12 +3,11 @@
 --
 -- There is no JSON boundary after the rewrite: this reads config.values
 -- directly and produces ONE plain Lua table threaded through every stage
--- (scan/parse/frontmatter/horizon/format/state/mutate). It starts from the
+-- (walk/index/parse/frontmatter/horizon/format/state/mutate). It starts from the
 -- parse-context (which owns the regex/pattern construction) and augments it
 -- with the fields the other stages read.
 
 local parse = require("taskbuffer.parse")
-local scan = require("taskbuffer.scan")
 local frontmatter = require("taskbuffer.frontmatter")
 local strftime = require("taskbuffer.strftime")
 
@@ -41,19 +40,13 @@ function M.build_context(config, runtime)
     -- Sources (config.apply already ~-expanded them); copy defensively.
     ctx.sources = vim.deepcopy(config.sources or {})
 
-    -- rg scan pattern from the (filtered) checkbox literals.
-    ctx.scan_pattern = scan.build_pattern(ctx.checkbox)
+    ctx.exclude = vim.deepcopy(config.exclude or require("taskbuffer.walk").DEFAULT_EXCLUDE)
     for _, rule in ipairs(ctx.annotations) do
         assert(
             type(rule.extension) == "string" and rule.extension:match("^[%w_]+$"),
             "annotation extension must be a file extension"
         )
-        assert(
-            type(rule.search) == "string" and rule.search ~= "",
-            "annotation search must be a nonempty rg/grep regex"
-        )
         assert(type(rule.pattern) == "string" and rule.pattern ~= "", "annotation pattern must capture task text")
-        ctx.scan_pattern = ctx.scan_pattern .. "|(" .. rule.search .. ")"
     end
 
     -- Raw strftime strings (state/mutate markers + format display).

@@ -57,7 +57,7 @@ describe("editor interactions", function()
     end)
 
     it("opens, refreshes, and reopens real taskfiles without W10 or W13", function()
-        assert.is_false(editor.lua("return package.loaded['taskbuffer.scan'] ~= nil"))
+        assert.is_false(editor.lua("return package.loaded['taskbuffer.index'] ~= nil"))
         assert.is_false(editor.lua("return package.loaded['taskbuffer.source'] ~= nil"))
         editor.command("Tasks")
         ready_tasks("Example task")

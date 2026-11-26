@@ -1,9 +1,7 @@
--- Scan and build source data only on demand. Display options reuse the latest
--- snapshot; entering taskbuffer or mutating a source requests a fresh scan.
+-- Render task lists from the in-memory index (index.lua). Display options reuse
+-- the latest snapshot; entering taskbuffer or mutating a source sweeps the index.
 local context = require("taskbuffer.context")
-local scan = require("taskbuffer.scan")
-local parse = require("taskbuffer.parse")
-local frontmatter = require("taskbuffer.frontmatter")
+local index = require("taskbuffer.index")
 local horizon = require("taskbuffer.horizon")
 local format = require("taskbuffer.format")
 local strftime = require("taskbuffer.strftime")
@@ -11,73 +9,11 @@ local profile = require("taskbuffer.profile")
 local async = require("taskbuffer.async")
 
 local M = {}
-local cached
-local revision = 0
 
+--- Drop the index entirely (configuration changed).
 function M.invalidate()
-    revision = revision + 1
-    cached = nil
+    index.reset()
 end
-
-local function add_tags(seen, tasks, annotations)
-    for _, task in ipairs(tasks) do
-        async.checkpoint()
-        if annotations and task.annotation then
-            annotations[task.file_path] = annotations[task.file_path] or {}
-            annotations[task.file_path][task.line_number] = true
-        end
-        if task.status == "open" then
-            for _, tag in ipairs(task.tags or {}) do
-                seen[tag] = true
-            end
-        end
-    end
-end
-
-local function sorted_tags(seen)
-    local tags = {}
-    for tag in pairs(seen) do
-        tags[#tags + 1] = tag
-    end
-    async.sort(tags, function(a, b)
-        return a < b
-    end)
-    return tags
-end
-
-local function build_tasks(ctx, matches, projects, tags_only)
-    frontmatter.reset()
-    local originals = {}
-    for _, match in ipairs(matches) do
-        async.checkpoint()
-        originals[match.path] = originals[match.path] or {}
-        originals[match.path][match.line_number] = match.text:gsub("\r$", "")
-    end
-    local errors = ctx.strict and not tags_only and {} or nil
-    ctx.date_errors = errors
-    local tasks = profile.measure("parse", parse.parse_tasks, matches, ctx)
-    profile.measure("frontmatter.tags", frontmatter.merge_tags, tasks)
-    -- Tag queries deliberately include tasks before frontmatter completion/due
-    -- filtering, preserving the public tags() contract.
-    local seen, annotations = {}, {}
-    add_tags(seen, tasks, annotations)
-    if not tags_only then
-        tasks = profile.measure("frontmatter.filter", frontmatter.filter_completed, tasks, ctx.fm_cfg)
-        profile.measure("frontmatter.due", frontmatter.merge_due, tasks, ctx.fm_cfg, ctx.date_fmt, errors)
-    end
-    local project_tasks = {}
-    for _, path in ipairs(projects) do
-        async.checkpoint()
-        local task = frontmatter.project_task(path, ctx.fm_cfg, ctx.date_fmt, errors)
-        if task then
-            tasks[#tasks + 1] = task
-            project_tasks[#project_tasks + 1] = task
-        end
-    end
-    add_tags(seen, project_tasks)
-    return { tasks = tasks, tags = sorted_tags(seen), errors = errors, originals = originals, annotations = annotations }
-end
-build_tasks = profile.wrap("tasks.build", build_tasks)
 
 local function render(ctx, data, view)
     if data.errors and #data.errors > 0 then
@@ -119,146 +55,41 @@ local function new_context(opts)
     return profile.measure("context", context.build_context, config, opts or {}), config
 end
 
--- Discovery still runs on entry so newly added/deleted files are seen. If the
--- relevant file set and metadata are unchanged, parsing/frontmatter can be
--- skipped. Include ctime as well as mtime to catch restored modification times.
-local function source_versions(matches, projects)
-    local paths = {}
-    for _, match in ipairs(matches) do
-        async.checkpoint()
-        paths[match.path] = paths[match.path] or false
-    end
-    for _, path in ipairs(projects) do
-        paths[path] = true
-    end
-    local versions = {}
-    for path, project in pairs(paths) do
-        async.checkpoint()
-        local stat = vim.uv.fs_stat(path)
-        if not stat then
-            return nil
-        end -- file disappeared during discovery
-        versions[path] = table.concat({
-            tostring(project),
-            stat.size,
-            stat.ino,
-            stat.mtime.sec,
-            stat.mtime.nsec,
-            stat.ctime.sec,
-            stat.ctime.nsec,
-        }, ":")
-    end
-    return versions
-end
-
-local function same_versions(a, b)
-    if not a or not b then
-        return false
-    end
-    for path, value in pairs(a) do
-        async.checkpoint()
-        if b[path] ~= value then
-            return false
-        end
-    end
-    for path in pairs(b) do
-        async.checkpoint()
-        if a[path] == nil then
-            return false
-        end
-    end
-    return true
-end
-
--- Synchronous helpers remain available for scripts; interactive paths use the
--- async APIs below, including the very first open and tag picker.
+-- Synchronous helpers remain available for scripts; they sweep the index (walk,
+-- stat, reparse changed files) so they always see the current disk state.
 function M.list(opts)
     local ctx = new_context(opts)
-    local matches, err = scan.scan(ctx)
+    local data, err = index.refresh_sync(ctx)
     if err then
         return nil, err
     end
-    local projects, project_err = scan.scan_project_paths(ctx)
-    if project_err then
-        return nil, project_err
-    end
-    return render(ctx, build_tasks(ctx, matches, projects))
+    return render(ctx, data)
 end
 
 function M.tags(opts)
     local ctx = new_context(opts)
-    local matches, err = scan.scan(ctx)
+    local data, err = index.refresh_sync(ctx)
     if err then
         return {}, err
     end
-    local projects, project_err = scan.scan_project_paths(ctx)
-    if project_err then
-        return {}, project_err
-    end
-    return build_tasks(ctx, matches, projects, true).tags
+    return vim.list_slice(data.tags)
 end
 
--- Both scans run concurrently; a failure aborts the whole operation. CPU work
--- starts only after both succeed. Cancellation owns subprocesses and all slices.
-local function collect_async(ctx, tags_only, cb, previous)
-    local remaining = 2
-    local matches, projects
-    local finished = false
-    local cancel_scan, cancel_projects, cancel_build
-    local function cancel()
-        finished = true
-        if cancel_scan then
-            cancel_scan()
-        end
-        if cancel_projects then
-            cancel_projects()
-        end
-        if cancel_build then
-            cancel_build()
-        end
+-- A reused view renders from the index as it is; anything else sweeps first.
+-- Both run in cancellable slices and share the index with every other caller.
+local function snapshot_async(ctx, reuse, cb)
+    if reuse and index.is_ready() then
+        return async.run(function()
+            return index.current()
+        end, cb)
     end
-    local function ready(err)
-        if finished then
-            return
-        end
-        if err then
-            cancel()
-            cb(nil, err)
-            return
-        end
-        remaining = remaining - 1
-        if remaining == 0 then
-            cancel_build = async.run(function()
-                local versions = profile.measure("sources.check", source_versions, matches, projects)
-                if previous and same_versions(versions, previous.versions) then
-                    return previous
-                end
-                local data = build_tasks(ctx, matches, projects, tags_only)
-                data.versions = versions
-                return data
-            end, function(data, failure)
-                if not finished then
-                    finished = true
-                    cb(data, failure)
-                end
-            end)
-        end
-    end
-    cancel_scan = scan.scan_async(ctx, function(value, err)
-        matches = value
-        ready(err)
-    end)
-    cancel_projects = scan.scan_project_paths_async(ctx, function(value, err)
-        projects = value
-        ready(err)
-    end)
-    return cancel
+    return index.refresh_async(ctx, cb)
 end
 
 function M.list_async(opts, cb)
     opts = opts or {}
     local span = profile.begin("list.async.wall")
-    local ctx, config = new_context(opts)
+    local ctx = new_context(opts)
     local cancelled = false
     local cancel_collect, cancel_render
     local function finish(text, err, data)
@@ -267,7 +98,7 @@ function M.list_async(opts, cb)
             cb(text, err, data)
         end
     end
-    local function display(data, err)
+    cancel_collect = snapshot_async(ctx, opts.reuse, function(data, err)
         if err then
             finish(nil, err)
             return
@@ -277,25 +108,10 @@ function M.list_async(opts, cb)
         end, function(text, failure)
             finish(text, failure, data)
         end)
-    end
-    if opts.reuse and cached and cached.config == config then
-        display(cached.data)
-    else
-        revision = revision + 1
-        local version = revision
-        local previous = not opts.force and cached and cached.config == config and cached.data or nil
-        cancel_collect = collect_async(ctx, false, function(data, err)
-            if not err and version == revision then
-                cached = { config = config, data = data }
-            end
-            display(data, err)
-        end, previous)
-    end
+    end)
     return function()
         cancelled = true
-        if cancel_collect then
-            cancel_collect()
-        end
+        cancel_collect()
         if cancel_render then
             cancel_render()
         end
@@ -310,18 +126,10 @@ end
 
 function M.tags_async(opts, cb)
     local span = profile.begin("tags.async.wall")
-    local ctx, config = new_context(opts)
-    local function finish(tags, err)
+    local ctx = new_context(opts)
+    return snapshot_async(ctx, index.is_ready(), function(data, err)
         profile.finish(span)
-        cb(tags, err)
-    end
-    if cached and cached.config == config then
-        return async.run(function()
-            return vim.list_slice(cached.data.tags)
-        end, finish)
-    end
-    return collect_async(ctx, true, function(data, err)
-        finish(data and data.tags, err)
+        cb(data and vim.list_slice(data.tags), err)
     end)
 end
 

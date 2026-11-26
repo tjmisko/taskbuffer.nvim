@@ -1,6 +1,6 @@
 local list = require("taskbuffer.list")
 local config = require("taskbuffer.config")
-local scan = require("taskbuffer.scan")
+local index = require("taskbuffer.index")
 local parse = require("taskbuffer.parse")
 local dir, saved, originals
 
@@ -22,14 +22,7 @@ end
 describe("async listing and source snapshots", function()
     before_each(function()
         saved = config.values
-        originals = {
-            scan = scan.scan,
-            projects = scan.scan_project_paths,
-            scan_async = scan.scan_async,
-            projects_async = scan.scan_project_paths_async,
-            parse = parse.parse_tasks,
-            system = vim.system,
-        }
+        originals = { parse = parse.parse_task, system = vim.system }
         dir = vim.fn.tempname()
         vim.fn.mkdir(dir, "p")
         -- The scanner resolves aliases, including macOS /var -> /private/var.
@@ -39,43 +32,27 @@ describe("async listing and source snapshots", function()
     end)
     after_each(function()
         config.values = saved
-        scan.scan, scan.scan_project_paths = originals.scan, originals.projects
-        scan.scan_async, scan.scan_project_paths_async = originals.scan_async, originals.projects_async
-        parse.parse_tasks, vim.system = originals.parse, originals.system
+        parse.parse_task, vim.system = originals.parse, originals.system
         list.invalidate()
         vim.fn.delete(dir, "rf")
     end)
 
-    it("runs both discovery scans concurrently without synchronous fallback", function()
-        local tasks_cb, projects_cb
-        scan.scan = function()
-            error("sync scan")
+    it("should not spawn any process when listing, tagging, or sweeping", function()
+        write("a.md", { "- [ ] One #work (@[[2026-09-11]])" })
+        vim.system = function()
+            error("no subprocess allowed")
         end
-        scan.scan_project_paths = function()
-            error("sync project scan")
+        local jobstart = vim.fn.jobstart
+        vim.fn.jobstart = function()
+            error("no subprocess allowed")
         end
-        scan.scan_async = function(_, cb)
-            tasks_cb = cb
-            return function() end
-        end
-        scan.scan_project_paths_async = function(_, cb)
-            projects_cb = cb
-            return function() end
-        end
-        local done = false
-        list.list_async({}, function(_, err)
-            assert.is_nil(err)
-            done = true
+        local ok, err = pcall(function()
+            assert.is_truthy(list.list():find("One", 1, true))
+            assert.are.same({ "work" }, list.tags())
+            assert.is_truthy(wait_list():find("One", 1, true))
         end)
-        assert.is_function(tasks_cb)
-        assert.is_function(projects_cb)
-        assert.is_false(done)
-        tasks_cb({}, nil)
-        assert.is_false(done)
-        projects_cb({}, nil)
-        assert.is_true(vim.wait(1000, function()
-            return done
-        end, 5))
+        vim.fn.jobstart = jobstart
+        assert.is_true(ok, err)
     end)
 
     it("keeps native row metadata separate from cached script output and filtered views", function()
@@ -142,16 +119,18 @@ describe("async listing and source snapshots", function()
         assert.are.equal(expected_error, actual_error)
     end)
 
-    it("skips unchanged parsing and skips discovery for view changes/tag queries", function()
+    it("should reparse only changed files and skip discovery for view changes and tag queries", function()
         write("tasks.md", { "- [ ] One #work (@[[2026-09-11]])", "- [ ] Two #personal" })
+        write("other.md", { "- [ ] Other" })
         local count = 0
-        parse.parse_tasks = function(...)
+        parse.parse_task = function(...)
             count = count + 1
             return originals.parse(...)
         end
         local initial = wait_list()
+        assert.are.equal(3, count)
         assert.are.equal(initial, wait_list())
-        assert.are.equal(1, count)
+        assert.are.equal(3, count)
         vim.system = function()
             error("unnecessary scan")
         end
@@ -168,7 +147,11 @@ describe("async listing and source snapshots", function()
         assert.is_true(vim.wait(1000, function()
             return done
         end, 5))
-        assert.are.equal(1, count)
+        assert.are.equal(3, count)
+        -- Touch one file with a distinguishable size: only it is reparsed.
+        write("other.md", { "- [ ] Other changed" })
+        assert.is_truthy(wait_list():find("Other changed", 1, true))
+        assert.are.equal(4, count)
     end)
 
     it("discovers source edits, additions, deletions, and frontmatter-only changes", function()
@@ -184,38 +167,23 @@ describe("async listing and source snapshots", function()
         assert.is_nil(wait_list():find("Original", 1, true))
     end)
 
-    it("propagates project scan errors and suppresses callbacks after cancellation", function()
-        local tasks_cb, projects_cb
-        local killed = 0
-        scan.scan_async = function(_, cb)
-            tasks_cb = cb
-            return function()
-                killed = killed + 1
-            end
-        end
-        scan.scan_project_paths_async = function(_, cb)
-            projects_cb = cb
-            return function()
-                killed = killed + 1
-            end
-        end
+    it("should propagate a discovery error and suppress callbacks after cancellation", function()
+        config.apply({ sources = { dir .. "/missing" }, tmpdir = dir, state_dir = dir })
+        index.reset()
         local calls, failure = 0, nil
         list.list_async({}, function(_, err)
             calls = calls + 1
             failure = err
         end)
-        projects_cb(nil, "project failed")
-        tasks_cb({}, nil)
-        assert.are.equal(1, calls)
-        assert.are.equal("project failed", failure)
-        assert.are.equal(2, killed)
+        assert.is_true(vim.wait(2000, function()
+            return calls > 0
+        end, 5))
+        assert.is_truthy(failure:find("source not found", 1, true))
         local cancel = list.list_async({}, function()
             calls = calls + 1
         end)
         cancel()
-        tasks_cb({}, nil)
-        projects_cb({}, nil)
-        vim.wait(20, function()
+        vim.wait(30, function()
             return false
         end, 5)
         assert.are.equal(1, calls)

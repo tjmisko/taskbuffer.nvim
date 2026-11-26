@@ -22,16 +22,16 @@ CONTENTS                                              *taskbuffer-contents*
 
 taskbuffer.nvim is a Neovim plugin for managing a personal task and
 time-tracking system built on Obsidian-style markdown notes. Tasks are
-defined inline in `.md` files using a specific syntax, scanned with
-ripgrep, parsed in Lua, and displayed in a custom read-only taskfile buffer
+defined inline in `.md` files using a specific syntax, indexed in memory by
+a pure-Lua walk of your sources, parsed in Lua, and displayed in a custom
+read-only taskfile buffer
 bucketed by date interval (Overdue, Today, Tomorrow, This Week, etc.).
 
 ==============================================================================
 2. REQUIREMENTS                                   *taskbuffer-requirements*
 
 - Neovim >= 0.10
-- Linux or macOS with the standard cp utility (Windows is unvalidated)
-- ripgrep (`rg`) on PATH
+- Linux or macOS (Windows is unvalidated); no external programs are needed
 - Tag picker: Neovim's built-in vim.ui.select, or a configured provider
 
 The plugin is pure Lua; there is no build step or separate taskbuffer executable.
@@ -81,6 +81,10 @@ option not specified falls back to its default value.
 
       -- Task sources: directories (recursive) or glob patterns
       sources = { "~/Notes" },
+
+      -- Directory names skipped while walking sources. Hidden files and
+      -- directories are always skipped; symlinks inside sources are not followed.
+      exclude = { "node_modules", "target", "dist", "build" },
 
       -- Optional code annotation rules (see |taskbuffer-annotations|)
       annotations = {},
@@ -211,15 +215,14 @@ rules extend task discovery without changing Markdown checkbox syntax:
       annotations = {
           {
               extension = "rs",
-              search = "todo!",
               pattern = '^%s*todo!%s*%(%s*"(.-)"%s*%)%s*;?%s*$',
           },
       },
   })
 <
-`extension` is the filename extension without a dot. `search` is an rg/grep
-regular expression added to the existing asynchronous discovery scan.
-`pattern` is a Lua pattern whose first capture is the task text. Rules apply
+`extension` is the filename extension without a dot. Files with that
+extension are indexed alongside `.md` files. The legacy `search` key is
+accepted and ignored. `pattern` is a Lua pattern whose first capture is the task text. Rules apply
 only to matching extensions, after trying the configured checkbox prefixes.
 Captured text supports the usual tags, dates, and duration syntax.
 
@@ -307,7 +310,6 @@ Health check ~
 
 Run `:checkhealth taskbuffer` to verify your setup. Checks:
 - Neovim version (>= 0.10)
-- ripgrep is available
 - Source directories exist
 - vim.ui.select tag picker (no picker plugin required)
 
@@ -520,7 +522,7 @@ Programmatic results: >lua
   print(profile.report())
 <
 For isolated startup and generated-vault benchmarks, run `make bench` from the
-repository root. Python 3, Neovim, and ripgrep are required. Custom workload: >
+repository root. Python 3 and Neovim are required. Custom workload: >
   make bench BENCH_ARGS='--files 500 --tasks-per-file 20 --runs 20'
 <
 See docs/performance.md in the repository for benchmark interpretation,

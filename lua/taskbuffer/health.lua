@@ -12,26 +12,7 @@ function M.check()
 
     local config = require("taskbuffer.config").values
 
-    -- 2. Search backend
-    if vim.fn.executable("rg") == 1 then
-        vim.health.ok("ripgrep (rg) found")
-    elseif vim.fn.executable("grep") == 1 then
-        vim.health.warn("ripgrep (rg) not found — using slower grep fallback", {
-            "Install ripgrep for best performance: https://github.com/BurntSushi/ripgrep",
-        })
-    else
-        vim.health.error("neither rg nor grep found", {
-            "Install ripgrep: https://github.com/BurntSushi/ripgrep",
-        })
-    end
-
-    if vim.fn.executable("cp") == 1 then
-        vim.health.ok("cp found (source metadata preservation)")
-    else
-        vim.health.error("cp is required to preserve metadata when editing source files")
-    end
-
-    -- 4. Source directories
+    -- 2. Source directories
     for _, src in ipairs(config.sources) do
         if vim.fn.isdirectory(src) == 1 then
             vim.health.ok("Source directory exists: " .. src)

@@ -65,7 +65,8 @@
 ---@field tmpdir string directory for legacy synchronous taskfile exports
 ---@field show_undated boolean whether to show undated tasks by default
 ---@field sources string[] directories or glob patterns to scan
----@field annotations table[] opt-in code annotation rules {extension, search, pattern}
+---@field exclude string[] directory names skipped while walking sources
+---@field annotations table[] opt-in code annotation rules {extension, pattern} (search is accepted and ignored)
 ---@field inbox TaskbufferInbox default location for new tasks
 ---@field formats TaskbufferFormats task syntax formats
 ---@field keymaps TaskbufferKeymaps keymap bindings
@@ -99,8 +100,13 @@ M.defaults = {
     -- Task sources: directories (recursive) or glob patterns
     sources = { "~/Notes" },
 
-    -- Additional single-line code tasks. search is an rg/grep regex; pattern
-    -- is a Lua pattern whose first capture contains the task text.
+    -- Directory names skipped while walking sources (hidden entries are
+    -- always skipped).
+    exclude = { "node_modules", "target", "dist", "build" },
+
+    -- Additional single-line code tasks. pattern is a Lua pattern whose first
+    -- capture contains the task text. The legacy search key is accepted and
+    -- ignored.
     annotations = {},
 
     -- Default location for new tasks

@@ -22,8 +22,7 @@ not write a generated file.
 ## Requirements
 
 - Neovim **0.10 or newer**.
-- Linux or macOS, with the standard `cp` utility. Windows is not tested.
-- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`) for task discovery.
+- Linux or macOS. Windows is not tested. No external programs are needed.
 
 Taskbuffer is written in Lua and requires no build step. It works with Markdown
 files independently of Obsidian.
@@ -160,7 +159,6 @@ opts = {
     annotations = {
         {
             extension = "rs",
-            search = "todo!", -- rg/grep regex used during discovery
             pattern = '^%s*todo!%s*%(%s*"(.-)"%s*%)%s*;?%s*$', -- Lua capture
         },
     },
@@ -172,6 +170,11 @@ items**, tagged `code`. Press Enter to open the source, implement the function,
 and save. Returning to the list removes the resolved task. Checkbox, date, and
 timer shortcuts are disabled for code annotations; they never append Markdown
 markers to your code. See `:help taskbuffer-annotations` for pattern details.
+
+Taskbuffer indexes `.md` files and the extensions of your annotation rules,
+skipping hidden files and directories and any directory named in `exclude`
+(default `{ "node_modules", "target", "dist", "build" }`). Symlinks found while
+walking a source are not followed.
 
 The [full reference](doc/taskbuffer.txt) is also available inside Neovim:
 

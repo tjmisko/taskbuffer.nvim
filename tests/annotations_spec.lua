@@ -63,61 +63,56 @@ describe("opt-in code annotations", function()
         assert.are.same({ "code" }, task.tags)
     end)
 
-    for _, fallback in ipairs({ false, true }) do
-        for _, async in ipairs({ false, true }) do
-            it(
-                "scans distinct sources with "
-                    .. (fallback and "grep" or "rg")
-                    .. (async and " asynchronously" or " synchronously"),
-                function()
-                    local scan = require("taskbuffer.scan")
-                    local root = vim.fn.tempname()
-                    for _, name in ipairs({ "work", "personal", "project/src" }) do
-                        vim.fn.mkdir(root .. "/" .. name, "p")
-                    end
-                    vim.fn.writefile({ "- [ ] Work task" }, root .. "/work/tasks.md")
-                    vim.fn.writefile({ "- [ ] Personal task" }, root .. "/personal/tasks.md")
-                    vim.fn.writefile({ "pub fn total() -> u32 {", macro, "}" }, root .. "/project/src/lib.rs")
-                    local ctx = require("taskbuffer.context").build_context({
-                        sources = { root .. "/work", root .. "/personal", root .. "/project" },
-                        annotations = { rule },
-                    }, {})
-                    local original = scan._have_rg
-                    scan._have_rg = function()
-                        return not fallback
-                    end
-                    local ok, err = pcall(function()
-                        local matches, failure
-                        if async then
-                            local done = false
-                            scan.scan_async(ctx, function(result, problem)
-                                matches, failure, done = result, problem, true
-                            end)
-                            assert.is_true(vim.wait(5000, function()
-                                return done
-                            end, 10))
-                        else
-                            matches, failure = scan.scan(ctx)
-                        end
-                        assert.is_nil(failure)
-                        assert.are.equal(3, #matches)
-                        local tasks = parse.parse_tasks(matches, ctx)
-                        assert.are.equal(3, #tasks)
-                        local code
-                        for _, match in ipairs(matches) do
-                            if match.path:match("%.rs$") then
-                                code = match
-                            end
-                        end
-                        assert.are.equal(macro, code.text)
-                        assert.are.equal(2, code.line_number)
+    for _, async in ipairs({ false, true }) do
+        it("indexes distinct sources " .. (async and "asynchronously" or "synchronously"), function()
+            local index = require("taskbuffer.index")
+            local root = vim.fn.tempname()
+            for _, name in ipairs({ "work", "personal", "project/src" }) do
+                vim.fn.mkdir(root .. "/" .. name, "p")
+            end
+            vim.fn.writefile({ "- [ ] Work task" }, root .. "/work/tasks.md")
+            vim.fn.writefile({ "- [ ] Personal task" }, root .. "/personal/tasks.md")
+            vim.fn.writefile({ "pub fn total() -> u32 {", macro, "}" }, root .. "/project/src/lib.rs")
+            local config = require("taskbuffer.config")
+            local saved = config.values
+            config.apply({
+                sources = { root .. "/work", root .. "/personal", root .. "/project" },
+                annotations = { rule },
+            })
+            index.reset()
+            local ctx = require("taskbuffer.context").build_context(config.values, {})
+            local ok, err = pcall(function()
+                local data, failure
+                if async then
+                    local done = false
+                    index.refresh_async(ctx, function(result, problem)
+                        data, failure, done = result, problem, true
                     end)
-                    scan._have_rg = original
-                    vim.fn.delete(root, "rf")
-                    assert(ok, err)
+                    assert.is_true(vim.wait(5000, function()
+                        return done
+                    end, 10))
+                else
+                    data, failure = index.refresh_sync(ctx)
                 end
-            )
-        end
+                assert.is_nil(failure)
+                assert.are.equal(3, #data.tasks)
+                local code
+                for _, task in ipairs(data.tasks) do
+                    if task.file_path:match("%.rs$") then
+                        code = task
+                    end
+                end
+                assert.are.equal("Sum the cart items", code.body)
+                assert.are.equal(2, code.line_number)
+                assert.is_true(code.annotation)
+                assert.are.equal(macro, data.originals[code.file_path][2])
+                assert.is_true(data.annotations[code.file_path][2])
+            end)
+            config.values = saved
+            index.reset()
+            vim.fn.delete(root, "rf")
+            assert(ok, err)
+        end)
     end
 end)
 

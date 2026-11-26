@@ -1,0 +1,93 @@
+-- Generated from the rg-based pipeline before the in-memory index replaced it.
+return {
+    ["basic-vault"] = {
+        default = "# Today\n2026-02-17 | 09:00 | 15m | Morning standup\n2026-02-17 |       |     | Review pull requests\n\n# Tomorrow\n2026-02-18 |       | 30m | Write weekly report\n\n# Someday\n           |       |     | Learn Rust\n           |       |     | Reorganize bookmarks\n           |       | 60m | Read [[Design Patterns]] book",
+        markers = "# Today\n2026-02-17 | 09:00 | 15m | Morning standup\n2026-02-17 |       |     | Review pull requests\n\n# Tomorrow\n2026-02-18 |       | 30m | Write weekly report\n\n# Someday\n           |       |     | Learn Rust\n           |       |     | Reorganize bookmarks\n           |       | 60m | Read [[Design Patterns]] book",
+        no_undated = "# Today\n2026-02-17 | 09:00 | 15m | Morning standup\n2026-02-17 |       |     | Review pull requests\n\n# Tomorrow\n2026-02-18 |       | 30m | Write weekly report",
+        tags = {},
+    },
+    ["custom-format-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Task with plus tags +work +urgent",
+        markers = "# Today\n2026-02-17 |       |     | Task with plus tags +work +urgent",
+        no_undated = "# Today\n2026-02-17 |       |     | Task with plus tags +work +urgent",
+        tags = {},
+    },
+    ["edge-syntax-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Real task outside code block\n2026-02-17 |       |     | Top level task\n2026-02-17 |       |     | Indent level 1\n2026-02-17 |       |     | Indent level 2\n2026-02-17 |       |     | \n2026-02-17 |       | 30m | Extra whitespace body\n2026-02-17 |       |     | Visit [[The Commons]] for lunch\n2026-02-17 |       | 30m | First duration  second duration <60m>\n2026-02-17 |       |     | Trailing whitespace body\n\n# Tomorrow\n2026-02-18 |       |     | Task inside code block",
+        markers = "# Today\n2026-02-17 |       |     | Real task outside code block\n2026-02-17 |       |     | Top level task\n2026-02-17 |       |     | Indent level 1\n2026-02-17 |       |     | Indent level 2\n2026-02-17 |       |     | \n2026-02-17 |       | 30m | Extra whitespace body\n2026-02-17 |       |     | Visit [[The Commons]] for lunch\n2026-02-17 |       | 30m | First duration  second duration <60m>\n2026-02-17 |       |     | Trailing whitespace body\n\n# Tomorrow\n2026-02-18 |       |     | Task inside code block",
+        no_undated = "# Today\n2026-02-17 |       |     | Real task outside code block\n2026-02-17 |       |     | Top level task\n2026-02-17 |       |     | Indent level 1\n2026-02-17 |       |     | Indent level 2\n2026-02-17 |       |     | \n2026-02-17 |       | 30m | Extra whitespace body\n2026-02-17 |       |     | Visit [[The Commons]] for lunch\n2026-02-17 |       | 30m | First duration  second duration <60m>\n2026-02-17 |       |     | Trailing whitespace body\n\n# Tomorrow\n2026-02-18 |       |     | Task inside code block",
+        tags = {},
+    },
+    ["fm-due-vault"] = {
+        default = "# This Month\n2026-03-01 |       |     | Dated task with inline #work\n2026-03-10 |       |     | Has inline date #mixed\n\n# This Year\n2026-04-10 |       |     | Undated task in active project #ongoing\n2026-04-10 |       |     | Another undated in active #ongoing\n2026-04-15 |       |     | Task with bare YAML date #work\n2026-04-15 |       |     | Undated task one #work\n2026-04-15 |       |     | Undated task two #work\n2026-04-15 | 14:30 |     | Undated task inheriting time #meeting\n2026-04-15 | 09:00 |     | Inline has own time #meeting\n2026-04-15 |       |     | First subtask #project\n2026-04-15 |       |     | Second subtask #project\n2026-04-15 |       |     | project-sort #project\n2026-04-20 |       |     | Undated inherits FM #mixed\n2026-04-20 |       |     | Another undated inherits FM #mixed\n2026-04-20 |       |     | Third undated inherits FM #mixed\n2026-05-01 |       |     | Inline dated task from done file #cleanup\n2026-05-20 |       |     | Task in file missing required tag #notes\n2026-05-20 |       |     | Task in file with required tags #project #important\n2026-05-20 |       |     | require-tags #project #important\n2026-06-01 |       |     | Inline dated survives done file #finished\n2026-06-15 |       |     | Second inline dated survives #finished\n2026-07-01 |       |     | Inline overrides deadline #project\n2026-08-01 |       |     | Inline dated in archived #old\n\n# Someday\n           |       |     | Task using deadline key #project\n           |       |     | Another deadline task #project\n           |       |     | Task in archived file #old\n           |       |     | Another archived task #old\n           |       |     | Undated task in no-due file #random\n           |       |     | Another undated task here #random\n           |       |     | Undated task with no FM at all\n           |       |     | Another task with no FM",
+        markers = "# This Month\n2026-03-01 |       |     | Dated task with inline #work\n2026-03-10 |       |     | Has inline date #mixed\n\n# This Year\n2026-04-10 |       |     | Undated task in active project #ongoing\n2026-04-10 |       |     | Another undated in active #ongoing\n2026-04-15 |       |     | Task with bare YAML date #work\n2026-04-15 |       |     | Undated task one #work\n2026-04-15 |       |     | Undated task two #work\n2026-04-15 | 14:30 |     | Undated task inheriting time #meeting\n2026-04-15 | 09:00 |     | Inline has own time #meeting\n2026-04-15 |       |     | First subtask #project\n2026-04-15 |       |     | Second subtask #project\n2026-04-15 |       |     | project-sort #project\n2026-04-20 |       |     | Undated inherits FM #mixed\n2026-04-20 |       |     | Another undated inherits FM #mixed\n2026-04-20 |       |     | Third undated inherits FM #mixed\n2026-05-01 |       |     | Inline dated task from done file #cleanup\n2026-05-20 |       |     | Task in file missing required tag #notes\n2026-05-20 |       |     | Task in file with required tags #project #important\n2026-05-20 |       |     | require-tags #project #important\n2026-06-01 |       |     | Inline dated survives done file #finished\n2026-06-15 |       |     | Second inline dated survives #finished\n2026-07-01 |       |     | Inline overrides deadline #project\n2026-08-01 |       |     | Inline dated in archived #old\n\n# Someday\n           |       |     | Task using deadline key #project\n           |       |     | Another deadline task #project\n           |       |     | Task in archived file #old\n           |       |     | Another archived task #old\n           |       |     | Undated task in no-due file #random\n           |       |     | Another undated task here #random\n           |       |     | Undated task with no FM at all\n           |       |     | Another task with no FM",
+        no_undated = "# This Month\n2026-03-01 |       |     | Dated task with inline #work\n2026-03-10 |       |     | Has inline date #mixed\n\n# This Year\n2026-04-10 |       |     | Undated task in active project #ongoing\n2026-04-10 |       |     | Another undated in active #ongoing\n2026-04-15 |       |     | Task with bare YAML date #work\n2026-04-15 |       |     | Undated task one #work\n2026-04-15 |       |     | Undated task two #work\n2026-04-15 | 14:30 |     | Undated task inheriting time #meeting\n2026-04-15 | 09:00 |     | Inline has own time #meeting\n2026-04-15 |       |     | First subtask #project\n2026-04-15 |       |     | Second subtask #project\n2026-04-15 |       |     | project-sort #project\n2026-04-20 |       |     | Undated inherits FM #mixed\n2026-04-20 |       |     | Another undated inherits FM #mixed\n2026-04-20 |       |     | Third undated inherits FM #mixed\n2026-05-01 |       |     | Inline dated task from done file #cleanup\n2026-05-20 |       |     | Task in file missing required tag #notes\n2026-05-20 |       |     | Task in file with required tags #project #important\n2026-05-20 |       |     | require-tags #project #important\n2026-06-01 |       |     | Inline dated survives done file #finished\n2026-06-15 |       |     | Second inline dated survives #finished\n2026-07-01 |       |     | Inline overrides deadline #project\n2026-08-01 |       |     | Inline dated in archived #old",
+        tags = {
+            "cleanup",
+            "finished",
+            "important",
+            "meeting",
+            "mixed",
+            "notes",
+            "old",
+            "ongoing",
+            "project",
+            "random",
+            "work",
+        },
+    },
+    ["frontmatter-edge-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Task with empty frontmatter\n2026-02-17 |       |     | Task in malformed frontmatter file\n2026-02-17 |       |     | Task without frontmatter\n2026-02-17 |       |     | Task with string tags",
+        markers = "# Today\n2026-02-17 |       |     | Task with empty frontmatter\n2026-02-17 |       |     | Task in malformed frontmatter file\n2026-02-17 |       |     | Task without frontmatter\n2026-02-17 |       |     | Task with string tags",
+        no_undated = "# Today\n2026-02-17 |       |     | Task with empty frontmatter\n2026-02-17 |       |     | Task in malformed frontmatter file\n2026-02-17 |       |     | Task without frontmatter\n2026-02-17 |       |     | Task with string tags",
+        tags = {},
+    },
+    ["frontmatter-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Task without frontmatter tags #inline\n2026-02-17 |       |     | Design mockups #design #project\n2026-02-17 |       |     | Analyze indicator data #sspi #research\n\n# Tomorrow\n2026-02-18 |       |     | Write methodology section #sspi #research\n\n# This Week\n2026-02-20 |       |     | project-note #project",
+        markers = "# Today\n2026-02-17 |       |     | Task without frontmatter tags #inline\n2026-02-17 |       |     | Design mockups #design #project\n2026-02-17 |       |     | Analyze indicator data #sspi #research\n\n# Tomorrow\n2026-02-18 |       |     | Write methodology section #sspi #research\n\n# This Week\n2026-02-20 |       |     | project-note #project",
+        no_undated = "# Today\n2026-02-17 |       |     | Task without frontmatter tags #inline\n2026-02-17 |       |     | Design mockups #design #project\n2026-02-17 |       |     | Analyze indicator data #sspi #research\n\n# Tomorrow\n2026-02-18 |       |     | Write methodology section #sspi #research\n\n# This Week\n2026-02-20 |       |     | project-note #project",
+        tags = { "design", "inline", "project", "research", "sspi" },
+    },
+    ["glob-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Glob task A1\n2026-02-17 |       |     | Glob task B1\n2026-02-17 |       |     | Glob task other\n\n# Tomorrow\n2026-02-18 |       |     | Glob task A2",
+        markers = "# Today\n2026-02-17 |       |     | Glob task A1\n2026-02-17 |       |     | Glob task B1\n2026-02-17 |       |     | Glob task other\n\n# Tomorrow\n2026-02-18 |       |     | Glob task A2",
+        no_undated = "# Today\n2026-02-17 |       |     | Glob task A1\n2026-02-17 |       |     | Glob task B1\n2026-02-17 |       |     | Glob task other\n\n# Tomorrow\n2026-02-18 |       |     | Glob task A2",
+        tags = {},
+    },
+    ["horizons-vault"] = {
+        default = "# Overdue\n2026-02-10 |       |     | Pay electricity bill\n2026-02-14 |       |     | Submit expense report\n\n# Today\n2026-02-17 | 09:00 | 15m | Morning standup #work\n2026-02-17 |       |     | Review pull requests #work\n\n# This Week\n2026-02-20 |       |     | Team retrospective #work\n\n# This Month\n2026-03-05 |       | 60m | Dentist appointment #personal\n\n# This Year\n2027-01-15 |       |     | Annual review prep #work\n\n# Someday\n           |       |     | Learn Haskell #learning\n           |       |     | Reorganize bookshelf #personal",
+        markers = "# Overdue\n2026-02-10 |       |     | Pay electricity bill\n2026-02-14 |       |     | Submit expense report\n\n# Today\n2026-02-17 | 09:00 | 15m | Morning standup #work\n2026-02-17 |       |     | Review pull requests #work\n\n# This Week\n2026-02-20 |       |     | Team retrospective #work\n\n# This Month\n2026-03-05 |       | 60m | Dentist appointment #personal\n\n# This Year\n2027-01-15 |       |     | Annual review prep #work\n\n# Someday\n           |       |     | Learn Haskell #learning\n           |       |     | Reorganize bookshelf #personal",
+        no_undated = "# Overdue\n2026-02-10 |       |     | Pay electricity bill\n2026-02-14 |       |     | Submit expense report\n\n# Today\n2026-02-17 | 09:00 | 15m | Morning standup #work\n2026-02-17 |       |     | Review pull requests #work\n\n# This Week\n2026-02-20 |       |     | Team retrospective #work\n\n# This Month\n2026-03-05 |       | 60m | Dentist appointment #personal\n\n# This Year\n2027-01-15 |       |     | Annual review prep #work",
+        tags = { "learning", "personal", "work" },
+    },
+    ["mixed-status-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Open task one\n2026-02-17 | 14:00 | 45m | Open task three #urgent\n\n# Tomorrow\n2026-02-18 |       |     | Open task two",
+        markers = "# Today\n2026-02-17 |       |     | Open task one\n2026-02-17 | 14:00 | 45m | Open task three #urgent\n\n# Tomorrow\n2026-02-18 |       |     | Open task two",
+        no_undated = "# Today\n2026-02-17 |       |     | Open task one\n2026-02-17 | 14:00 | 45m | Open task three #urgent\n\n# Tomorrow\n2026-02-18 |       |     | Open task two",
+        tags = { "urgent" },
+    },
+    ["multi-source"] = {
+        default = "# Today\n2026-02-17 |       | 30m | Practice guitar #music\n2026-02-17 |       | 90m | Finish API migration #work\n\n# Tomorrow\n2026-02-18 |       |     | Run 5k #exercise\n\n# This Week\n2026-02-20 |       |     | Update documentation #work",
+        markers = "# Today\n2026-02-17 |       | 30m | Practice guitar #music\n2026-02-17 |       | 90m | Finish API migration #work\n\n# Tomorrow\n2026-02-18 |       |     | Run 5k #exercise\n\n# This Week\n2026-02-20 |       |     | Update documentation #work",
+        no_undated = "# Today\n2026-02-17 |       | 30m | Practice guitar #music\n2026-02-17 |       | 90m | Finish API migration #work\n\n# Tomorrow\n2026-02-18 |       |     | Run 5k #exercise\n\n# This Week\n2026-02-20 |       |     | Update documentation #work",
+        tags = { "exercise", "music", "work" },
+    },
+    ["path-edge-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Deeply nested task\n2026-02-17 |       |     | Normal task one\n2026-02-17 |       |     | Task in space dir\n2026-02-17 |       |     | Symlink target task\n\n# Tomorrow\n2026-02-18 |       |     | Normal task two",
+        markers = "# Today\n2026-02-17 |       |     | Deeply nested task\n2026-02-17 |       |     | Normal task one\n2026-02-17 |       |     | Task in space dir\n2026-02-17 |       |     | Symlink target task\n\n# Tomorrow\n2026-02-18 |       |     | Normal task two",
+        no_undated = "# Today\n2026-02-17 |       |     | Deeply nested task\n2026-02-17 |       |     | Normal task one\n2026-02-17 |       |     | Task in space dir\n2026-02-17 |       |     | Symlink target task\n\n# Tomorrow\n2026-02-18 |       |     | Normal task two",
+        tags = {},
+    },
+    ["tag-edge-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Task with inline and frontmatter tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with hyphenated tag #my-tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with underscore tag #my_tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with number tag #tag123 #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with duplicate inline tags #dupe #dupe #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with no inline tags #project-alpha #UPPERCASE",
+        markers = "# Today\n2026-02-17 |       |     | Task with inline and frontmatter tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with hyphenated tag #my-tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with underscore tag #my_tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with number tag #tag123 #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with duplicate inline tags #dupe #dupe #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with no inline tags #project-alpha #UPPERCASE",
+        no_undated = "# Today\n2026-02-17 |       |     | Task with inline and frontmatter tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with hyphenated tag #my-tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with underscore tag #my_tag #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with number tag #tag123 #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with duplicate inline tags #dupe #dupe #project-alpha #UPPERCASE\n2026-02-17 |       |     | Task with no inline tags #project-alpha #UPPERCASE",
+        tags = { "UPPERCASE", "dupe", "my-tag", "my_tag", "project-alpha", "tag123" },
+    },
+    ["tagged-vault"] = {
+        default = "# Today\n2026-02-17 |       |     | Deploy staging server #work #devops\n2026-02-17 |       |     | Fix login bug #work #urgent\n2026-02-17 |       |     | Grocery shopping #personal #errands\n\n# Tomorrow\n2026-02-18 |       |     | Plan team outing #personal\n\n# This Week\n2026-02-19 |       |     | Read architecture RFC #work",
+        markers = "# Today\n2026-02-17 |       |     | Deploy staging server #work #devops\n2026-02-17 |       |     | Fix login bug #work #urgent\n2026-02-17 |       |     | Grocery shopping #personal #errands\n\n# Tomorrow\n2026-02-18 |       |     | Plan team outing #personal\n\n# This Week\n2026-02-19 |       |     | Read architecture RFC #work",
+        no_undated = "# Today\n2026-02-17 |       |     | Deploy staging server #work #devops\n2026-02-17 |       |     | Fix login bug #work #urgent\n2026-02-17 |       |     | Grocery shopping #personal #errands\n\n# Tomorrow\n2026-02-18 |       |     | Plan team outing #personal\n\n# This Week\n2026-02-19 |       |     | Read architecture RFC #work",
+        tags = { "devops", "errands", "personal", "urgent", "work" },
+    },
+}
