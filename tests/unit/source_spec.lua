@@ -60,32 +60,39 @@ describe("source write safety", function()
         local xattr = require("taskbuffer.xattr")
         local probe = dir .. "/probe"
         vim.fn.writefile({}, probe)
-        local ffi = require("ffi")
-        pcall(ffi.cdef, "int setxattr(const char *path, const char *name, const void *value, size_t size, int flags);")
         local darwin = vim.uv.os_uname().sysname == "Darwin"
-        if darwin then
-            return pending("xattr round trip is only exercised on Linux")
+        local name = "user.taskbuffer-test"
+        local function set_attr(target)
+            if darwin then
+                return vim.system({ "xattr", "-w", name, "kept", target }, { text = true }):wait().code == 0
+            end
+            local ffi = require("ffi")
+            pcall(
+                ffi.cdef,
+                "int setxattr(const char *path, const char *name, const void *value, size_t size, int flags);"
+            )
+            return ffi.C.setxattr(target, name, "kept", 4, 0) == 0
         end
-        if ffi.C.setxattr(path, "user.taskbuffer-test", "kept", 4, 0) ~= 0 then
+        local function get_attr(target)
+            if darwin then
+                return vim.system({ "xattr", "-p", name, target }, { text = true }):wait().stdout
+            end
+            return vim.system({
+                "python3",
+                "-c",
+                "import os,sys; print(os.getxattr(sys.argv[1], sys.argv[2]).decode())",
+                target,
+                name,
+            }, { text = true })
+                :wait().stdout
+        end
+        if not set_attr(path) then
             return pending("filesystem rejects user xattrs")
         end
         assert.is_true(source.write(path, "replacement\n"))
-        local copied = xattr.copy_user(path, probe)
-        assert.are.equal(1, copied)
-        local get = vim.system({
-            "python3",
-            "-c",
-            "import os,sys; print(os.getxattr(sys.argv[1], 'user.taskbuffer-test').decode())",
-            probe,
-        }, { text = true }):wait()
-        assert.are.equal("kept\n", get.stdout)
-        local direct = vim.system({
-            "python3",
-            "-c",
-            "import os,sys; print(os.getxattr(sys.argv[1], 'user.taskbuffer-test').decode())",
-            path,
-        }, { text = true }):wait()
-        assert.are.equal("kept\n", direct.stdout)
+        assert.are.equal("kept\n", get_attr(path))
+        assert.are.equal(1, xattr.copy_user(path, probe))
+        assert.are.equal("kept\n", get_attr(probe))
     end)
 
     it("should copy nothing when the source has no xattrs", function()
