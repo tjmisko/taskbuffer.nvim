@@ -1,6 +1,7 @@
 -- On-demand source-file safety shared by actions, date edits, and undo.
 local M = {}
 local uv = vim.uv
+local xattr = require("taskbuffer.xattr")
 local editing
 
 local function canonical(path)
@@ -164,16 +165,13 @@ function M.write(path, data)
         return false, reason
     end
     if stat then
-        -- libuv has no portable ACL/xattr API. The platform copy utility keeps
-        -- those attributes on the staged file before its contents are changed.
-        -- This runs only for an explicit source edit, never setup or scanning.
-        local flag = uv.os_uname().sysname == "Linux" and "--preserve=mode,ownership,timestamps,xattr" or "-p"
-        local spawned, copy = pcall(function()
-            return vim.system({ "cp", flag, target, temporary }, { text = true }):wait()
-        end)
-        if not spawned or copy.code ~= 0 then
-            return fail("cannot preserve source metadata: " .. (spawned and copy.stderr or tostring(copy)))
+        -- Keep mode bits and user.* xattrs on the staged file. No subprocess.
+        -- Timestamps are not preserved; ownership is left to the OS.
+        local chmod_ok, chmod_err = uv.fs_fchmod(fd, stat.mode % 4096)
+        if not chmod_ok then
+            return fail("cannot preserve source metadata: " .. tostring(chmod_err))
         end
+        xattr.copy_user(target, temporary)
     end
     local written
     written, err = uv.fs_write(fd, data, 0)

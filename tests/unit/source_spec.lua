@@ -42,46 +42,87 @@ describe("source write safety", function()
         assert.are.equal("x\n", read())
     end)
 
-    it("leaves the source intact if metadata copying fails", function()
-        local original = vim.system
-        vim.system = function()
-            return {
-                wait = function()
-                    return { code = 1, stderr = "metadata copy failed" }
-                end,
-            }
+    it("should leave the source intact when preserving its mode fails", function()
+        local original = vim.uv.fs_fchmod
+        vim.uv.fs_fchmod = function()
+            return nil, "injected chmod failure"
         end
         local succeeded, ok, err = pcall(source.write, path, "replacement\n")
-        vim.system = original
+        vim.uv.fs_fchmod = original
         assert.is_true(succeeded)
         assert.is_false(ok)
         assert.is_truthy(err:find("metadata", 1, true))
         assert.are.equal("original\n", read())
+        assert.are.same({ "source.md" }, vim.fn.readdir(dir))
     end)
 
-    it("preserves extended attributes on the replaced file", function()
-        local set_args = {
+    it("should keep user xattrs when the note has them", function()
+        local xattr = require("taskbuffer.xattr")
+        local probe = dir .. "/probe"
+        vim.fn.writefile({}, probe)
+        local ffi = require("ffi")
+        pcall(ffi.cdef, "int setxattr(const char *path, const char *name, const void *value, size_t size, int flags);")
+        local darwin = vim.uv.os_uname().sysname == "Darwin"
+        if darwin then
+            return pending("xattr round trip is only exercised on Linux")
+        end
+        if ffi.C.setxattr(path, "user.taskbuffer-test", "kept", 4, 0) ~= 0 then
+            return pending("filesystem rejects user xattrs")
+        end
+        assert.is_true(source.write(path, "replacement\n"))
+        local copied = xattr.copy_user(path, probe)
+        assert.are.equal(1, copied)
+        local get = vim.system({
             "python3",
             "-c",
-            "import os,sys; os.setxattr(sys.argv[1], 'user.taskbuffer-test', b'kept')",
-            path,
-        }
-        local get_args = {
+            "import os,sys; print(os.getxattr(sys.argv[1], 'user.taskbuffer-test').decode())",
+            probe,
+        }, { text = true }):wait()
+        assert.are.equal("kept\n", get.stdout)
+        local direct = vim.system({
             "python3",
             "-c",
             "import os,sys; print(os.getxattr(sys.argv[1], 'user.taskbuffer-test').decode())",
             path,
+        }, { text = true }):wait()
+        assert.are.equal("kept\n", direct.stdout)
+    end)
+
+    it("should copy nothing when the source has no xattrs", function()
+        local other = dir .. "/other.md"
+        vim.fn.writefile({}, other)
+        assert.are.equal(0, require("taskbuffer.xattr").copy_user(path, other))
+        assert.are.equal(0, require("taskbuffer.xattr").copy_user(dir .. "/missing", other))
+    end)
+
+    it("should not spawn any process during a write", function()
+        local calls = 0
+        local saved = {
+            system = vim.system,
+            fn_system = vim.fn.system,
+            jobstart = vim.fn.jobstart,
+            spawn = vim.uv.spawn,
         }
-        if vim.uv.os_uname().sysname == "Darwin" then
-            set_args = { "xattr", "-w", "user.taskbuffer-test", "kept", path }
-            get_args = { "xattr", "-p", "user.taskbuffer-test", path }
+        local function count()
+            calls = calls + 1
+            error("process spawned during write")
         end
-        local set = vim.system(set_args, { text = true }):wait()
-        assert.are.equal(0, set.code, set.stderr)
+        vim.system, vim.fn.system, vim.fn.jobstart, vim.uv.spawn = count, count, count, count
+        assert(vim.uv.fs_chmod(path, 384)) -- 0600 forces the metadata path
+        local ok, result = pcall(source.write, path, "replacement\n")
+        vim.system, vim.fn.system, vim.fn.jobstart, vim.uv.spawn =
+            saved.system, saved.fn_system, saved.jobstart, saved.spawn
+        assert.is_true(ok)
+        assert.is_true(result)
+        assert.are.equal(0, calls)
+        assert.are.equal("replacement\n", read())
+    end)
+
+    it("should keep mode bits when rewriting a 0600 note", function()
+        assert(vim.uv.fs_chmod(path, 384)) -- 0600
         assert.is_true(source.write(path, "replacement\n"))
-        local get = vim.system(get_args, { text = true }):wait()
-        assert.are.equal(0, get.code, get.stderr)
-        assert.are.equal("kept\n", get.stdout)
+        assert.are.equal(384, vim.uv.fs_stat(path).mode % 512)
+        assert.are.equal("replacement\n", read())
     end)
 
     it("preserves permissions when replacing a source", function()
@@ -91,7 +132,7 @@ describe("source write safety", function()
         assert.are.equal("replacement\n", read())
     end)
 
-    it("edits a symlink target without replacing the link", function()
+    it("should rewrite the symlink target and leave the link in place", function()
         local link = dir .. "/link.md"
         assert(vim.uv.fs_symlink(path, link))
         assert.is_true(source.write(link, "replacement\n"))
