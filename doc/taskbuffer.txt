@@ -320,14 +320,20 @@ Run `:checkhealth taskbuffer` to verify your setup. Checks:
 
                                                                    *:Tasks*
 Source edits:
-    Linux/macOS source writes use the standard cp utility to preserve file
-    permissions, ACLs, and extended attributes in staged replacements.
+    Actions from the taskfile update the list immediately and are written to
+    disk in the background; pending writes are flushed when Neovim exits.
+    Writes replace the file atomically (temp file + rename), keeping its
+    permission bits, `user.*` extended attributes (other attributes and ACLs
+    are not copied), and symlinks. Hard-linked sources are refused.
+    If a source line changed on disk before its write lands, the edit is
+    applied where that exact line now is if it occurs once; otherwise the edit
+    is reverted in the list, its undo entry dropped, and a warning shown.
     Actions from the taskfile refuse to overwrite a source buffer with unsaved
     changes. Save that buffer first. Task and date shortcuts in a Markdown
     buffer edit its current contents, including unsaved changes, and use normal
     Neovim undo. Save those changes with :write.
-    If source files change, run :Tasks and wait for the refresh before acting on
-    a task. Stale task locations are rejected.
+    Changes made outside Neovim are picked up when you enter the list or
+    Neovim regains focus.
 
     :Tasks uses a persistent, readonly scratch buffer named taskbuffer://tasks.
     Source paths, line numbers, and snapshots are stored in Lua alongside the
