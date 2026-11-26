@@ -101,6 +101,20 @@ scenario("source_refresh", function()
     end
 end)
 
+-- An action rewrites one source line in memory, then publishes the list in the
+-- same call stack (what a keypress costs). Disk persistence is the writer's job.
+scenario("action_latency", function()
+    local source = require("taskbuffer.source")
+    for run = 1, runs do
+        local path = ("%s/vault/note-%05d.md"):format(dir, run - 1)
+        local data = assert(source.read(path), "benchmark note missing: " .. path)
+        local rewritten = data:gsub("%- %[ %] Task", "- [x] Task", 1)
+        assert(source.write(path, rewritten))
+        buffer.apply_local_change()
+    end
+    require("taskbuffer.writer").flush_sync()
+end)
+
 scenario("view_changes", function()
     for _ = 1, runs do
         buffer.set_show_markers(not buffer.get_show_markers())

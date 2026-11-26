@@ -106,7 +106,7 @@ def main():
     for mode in ("commands", "setup"):
         delta = results["startup"][mode]["median_ms"] - baseline
         print(f"{mode} median delta vs baseline: {delta:+.3f} ms")
-    for scenario in ("setup", "first_open", "reopen", "bufenter", "source_refresh", "view_changes", "tags"):
+    for scenario in ("setup", "first_open", "reopen", "bufenter", "source_refresh", "action_latency", "view_changes", "tags"):
         snapshot = results["workload"][scenario]
         print(f"\n{scenario}: inclusive milliseconds; p95 of latest {snapshot['sample_limit']} samples")
         print(f"{'stage':30} {'count':>7} {'mean':>10} {'p95':>10} {'max':>10}")
