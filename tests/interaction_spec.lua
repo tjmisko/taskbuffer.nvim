@@ -312,6 +312,34 @@ describe("editor interactions", function()
         assert.are.same({ "Inserted heading", original }, vim.fn.readfile(other))
     end)
 
+    it("should leave a task unchanged and warn when a single-task verb targets a task that is not open", function()
+        local lines = {
+            "- [x] Done task ::complete [[2026-02-17]] 10:00",
+            "- [-] Dropped task ::irrelevant [[2026-02-17]] 10:00",
+        }
+        vim.fn.writefile(lines, editor.path)
+        open_source()
+        for _, keys in ipairs({ "gg<Space>tc", "gg<Space>ti", "gg<Space>td", "gg<Space>tx", "G<Space>tc", "G<Space>tx" }) do
+            editor.lua("_G.test_warnings = {}")
+            editor.input(keys)
+            editor.wait("return #_G.test_warnings > 0", keys .. " did not warn about a non-open task")
+            assert.is_truthy(editor.lua("return _G.test_warnings[1]"):find("task is not open", 1, true))
+            assert.are.same(lines, editor.lines())
+        end
+        assert.is_false(editor.lua("return vim.bo.modified"))
+    end)
+
+    it("should still restore an irrelevant task with the single-task undo_irrelevant verb", function()
+        vim.fn.writefile({ "- [-] Dropped task ::irrelevant [[2026-02-17]] 10:00" }, editor.path)
+        open_source()
+        editor.input("<Space>tu")
+        editor.wait(
+            "return vim.api.nvim_get_current_line() == '- [ ] Dropped task'",
+            "undo_irrelevant did not restore the task"
+        )
+        editor.no_warnings()
+    end)
+
     it("marks an edited and moved task irrelevant, with one native undo step", function()
         open_source()
         editor.input("ggOUnsaved heading<Esc>j$A edited<Esc>")

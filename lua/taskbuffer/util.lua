@@ -484,6 +484,13 @@ function M.run_task_cmd(args, refresh)
         vim.notify("[taskbuffer] edit the code annotation in its source", vim.log.levels.WARN)
         return false
     end
+    if task.status ~= VERB_REQUIRED_STATUS[args[1]] then
+        vim.notify(
+            "[taskbuffer] task is not " .. VERB_REQUIRED_STATUS[args[1]] .. "; nothing changed",
+            vim.log.levels.WARN
+        )
+        return false
+    end
     local ok, err = require("taskbuffer.actions")[method](args[2], tonumber(args[3]), ctx)
     if not ok then
         vim.notify("[taskbuffer] task command failed: " .. tostring(err), vim.log.levels.ERROR)
