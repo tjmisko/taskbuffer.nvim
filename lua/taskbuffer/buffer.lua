@@ -126,6 +126,76 @@ local function task_key(task)
     return task and task.file_path .. "\0" .. task.line_number or nil
 end
 
+-- Replace only the span between the common head and tail of the old and new
+-- text. Falls back to the whole buffer when the old text is not known to be
+-- what the buffer holds (someone else edited it).
+local function replace_changed_range(buf, previous, lines)
+    if not previous or previous.tick ~= vim.api.nvim_buf_get_changedtick(buf) then
+        return vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    end
+    local old = previous.lines
+    local shared = math.min(#old, #lines)
+    local head = 0
+    while head < shared and old[head + 1] == lines[head + 1] do
+        head = head + 1
+    end
+    local tail = 0
+    while tail < shared - head and old[#old - tail] == lines[#lines - tail] do
+        tail = tail + 1
+    end
+    local replacement = vim.list_slice(lines, head + 1, #lines - tail)
+    return vim.api.nvim_buf_set_lines(buf, head, #old - tail, false, replacement)
+end
+
+local rollover_timer
+
+-- Milliseconds from `now` (epoch seconds) to the next local midnight.
+function M.ms_until_midnight(now)
+    local date = os.date("*t", now)
+    local midnight = os.time({ year = date.year, month = date.month, day = date.day + 1, hour = 0, min = 0, sec = 0 })
+    -- One second of slack so the re-render resolves the new day.
+    return math.max(1000, (midnight - now) * 1000 + 1000)
+end
+
+local function stop_rollover_timer()
+    if rollover_timer and not rollover_timer:is_closing() then
+        rollover_timer:stop()
+        rollover_timer:close()
+    end
+    rollover_timer = nil
+end
+
+-- Re-render every shown task list from the index, so Today/Overdue buckets
+-- follow the calendar. Reads no files: the index is reused as it is.
+function M.rollover()
+    stop_rollover_timer()
+    for buf in pairs(published) do
+        if vim.api.nvim_buf_is_loaded(buf) then
+            M.refresh_taskfile_async(nil, { buf = buf, reuse = true })
+        end
+    end
+    M.start_rollover_timer()
+end
+
+function M.rollover_armed()
+    return rollover_timer ~= nil
+end
+
+-- Armed only while a task list snapshot exists; one timer for all lists.
+function M.start_rollover_timer()
+    if rollover_timer or next(published) == nil then
+        return
+    end
+    rollover_timer = vim.uv.new_timer()
+    rollover_timer:start(
+        math.min(M.ms_until_midnight(os.time()), 2 ^ 31 - 1),
+        0,
+        vim.schedule_wrap(function()
+            M.rollover()
+        end)
+    )
+end
+
 local function publish(buf, view, data)
     local previous = published[buf]
     local lines = #view.lines > 0 and view.lines or { "" }
@@ -153,7 +223,7 @@ local function publish(buf, view, data)
         published[buf] = nil
         vim.bo[buf].modifiable = true
         vim.bo[buf].readonly = false
-        local ok, err = pcall(vim.api.nvim_buf_set_lines, buf, 0, -1, false, lines)
+        local ok, err = pcall(replace_changed_range, buf, previous, lines)
         vim.bo[buf].modified = false
         vim.bo[buf].readonly = true
         vim.bo[buf].modifiable = false
@@ -165,6 +235,7 @@ local function publish(buf, view, data)
     -- Replace the complete snapshot even if identical text refers to new tasks.
     -- No yielding between the text update and publishing its row associations.
     published[buf] = { lines = lines, rows = view.rows, tick = vim.api.nvim_buf_get_changedtick(buf), data = data }
+    M.start_rollover_timer()
     for win, saved in pairs(views) do
         if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
             local row, distance = nil, math.huge
@@ -283,6 +354,9 @@ end
 function M.release(buf)
     M.cancel_refresh(buf)
     published[buf] = nil
+    if next(published) == nil then
+        stop_rollover_timer()
+    end
 end
 
 -- The interactive view lives only in memory. Its task data lives in Lua.
