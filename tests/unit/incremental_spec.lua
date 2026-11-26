@@ -121,3 +121,116 @@ describe("cached task rows", function()
         assert.are.equal(before, format.format_taskfile(tasks, noon, { horizons = horizons }))
     end)
 end)
+
+describe("merged sort order on a large vault", function()
+    local function big_vault()
+        local tasks = {}
+        for file = 1, 4 do
+            for row = 1, 20 do
+                tasks[#tasks + 1] = task("/f" .. file .. ".md", row, {
+                    due_date = noon + ((file * 7 + row * 3) % 25 - 10) * day,
+                })
+            end
+        end
+        for file = 5, 8 do
+            for row = 1, 20 do
+                tasks[#tasks + 1] = task("/f" .. file .. ".md", row)
+            end
+        end
+        return tasks
+    end
+
+    local function shuffled(tasks, seed)
+        math.randomseed(seed)
+        local copy = vim.list_slice(tasks)
+        for i = #copy, 2, -1 do
+            local j = math.random(i)
+            copy[i], copy[j] = copy[j], copy[i]
+        end
+        return copy
+    end
+
+    -- Warm render first: a cold render of copies would replace the remembered order.
+    local function assert_warm_equals_cold(tasks)
+        local warm = render(tasks, {})
+        assert.are.equal(render(cold(tasks), {}), warm)
+    end
+
+    it("should match a cold render when a task is replaced and moves across buckets", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        tasks[5] = task("/f1.md", 5, { due_date = noon + 40 * day, body = "Moved" })
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when a task is removed", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        table.remove(tasks, 10)
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when a few tasks are added", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        tasks[#tasks + 1] = task("/f1.md", 99, { due_date = noon })
+        tasks[#tasks + 1] = task("/f9.md", 1)
+        tasks[#tasks + 1] = task("/f0.md", 1, { due_date = noon - 30 * day })
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when a task moves from dated to undated", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        tasks[3] = task("/f1.md", 3)
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when a task moves from undated to dated", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        tasks[100] = task("/f6.md", 20, { due_date = noon + day })
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when the input order is shuffled between renders", function()
+        local tasks = big_vault()
+        render(shuffled(tasks, 1), {})
+        tasks[7] = task("/f1.md", 7, { due_date = noon - 5 * day, body = "Replaced" })
+        table.remove(tasks, 90)
+        assert_warm_equals_cold(shuffled(tasks, 2))
+    end)
+
+    it("should match a cold render when a due date is mutated in place", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        tasks[4].due_date = noon + 100 * day
+        tasks[30].due_date = noon - 100 * day
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when more than a quarter of the tasks are new", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        for index = 1, 60 do
+            tasks[index] = task("/n.md", index, { due_date = noon + (index % 9) * day })
+        end
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render when the same task object appears twice", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        tasks[#tasks + 1] = tasks[2]
+        assert_warm_equals_cold(tasks)
+    end)
+
+    it("should match a cold render after several successive edits", function()
+        local tasks = big_vault()
+        render(tasks, {})
+        for step = 1, 6 do
+            tasks[step * 11] = task("/f" .. step .. ".md", 50 + step, { due_date = noon + step * day })
+            assert_warm_equals_cold(tasks)
+        end
+    end)
+end)
