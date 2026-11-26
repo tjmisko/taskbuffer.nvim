@@ -21,17 +21,6 @@ jobs:
         with:
           neovim: true
           version: ${{ matrix.neovim }}
-      - name: Install ripgrep (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p .deps/ripgrep
-          cd .deps/ripgrep
-          apt-get download ripgrep
-          dpkg -x ripgrep_*.deb .
-          echo "$PWD/usr/bin" >> "$GITHUB_PATH"
-      - name: Install ripgrep (macOS)
-        if: runner.os == 'macOS'
-        run: brew list ripgrep || brew install ripgrep
       - name: Clone plenary.nvim
         run: git clone --depth 1 https://github.com/nvim-lua/plenary.nvim .deps/plenary.nvim
       - name: Run Lua tests

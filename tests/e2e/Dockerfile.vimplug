@@ -1,7 +1,7 @@
 # E2E test: vim-plug installation
 FROM alpine:edge
 
-RUN apk add --no-cache neovim ripgrep git curl
+RUN apk add --no-cache neovim git curl
 
 # Copy plugin source
 COPY lua/ /plugin/lua/

@@ -21,7 +21,7 @@ def main():
     args = parser.parse_args()
     if args.check and args.record:
         parser.error("--check and --record are mutually exclusive")
-    for executable in ("nvim", "rg", "cp") + (() if args.check else ("wezterm",)):
+    for executable in ("nvim",) + (() if args.check else ("wezterm",)):
         if not shutil.which(executable):
             parser.error(f"missing executable: {executable}")
     deps = args.deps.expanduser().resolve()

@@ -1,7 +1,7 @@
 # E2E test: US date format + custom tag prefix
 FROM alpine:edge
 
-RUN apk add --no-cache neovim ripgrep git
+RUN apk add --no-cache neovim git
 
 # Copy plugin source
 COPY lua/ /plugin/lua/

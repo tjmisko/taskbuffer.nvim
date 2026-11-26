@@ -1,8 +1,8 @@
-# Runtime with Neovim and ripgrep
+# Runtime with Neovim
 FROM alpine:edge
 
-# Install neovim and ripgrep
-RUN apk add --no-cache neovim ripgrep git
+# Install neovim
+RUN apk add --no-cache neovim git
 
 # Copy plugin source
 COPY lua/ /plugin/lua/
