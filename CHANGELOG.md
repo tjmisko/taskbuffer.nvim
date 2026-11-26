@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Repeat and undo task actions
+
+- Repeat `<leader>tc`, `<leader>td`, `<leader>tx`, `<leader>ti`, and
+  `<leader>tu` with `.` at the cursor's new position.
+- Undo and redo task actions taken from the task list with its `u` and
+  `<C-r>`, one action per step.
+
 ### Performance and release hardening
 
 - Keep setup limited to configuration and lazy entry points; expand source globs

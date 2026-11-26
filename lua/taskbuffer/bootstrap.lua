@@ -13,10 +13,10 @@ function M.register()
         pcall(vim.keymap.del, "n", key)
     end
     global_keys = {}
-    local function map(action, rhs)
+    local function map(action, rhs, opts)
         local key = cfg.keymaps.global[action]
         if key then
-            vim.keymap.set("n", key, rhs)
+            vim.keymap.set("n", key, rhs, opts)
             global_keys[#global_keys + 1] = key
         end
     end
@@ -28,9 +28,12 @@ function M.register()
         irrelevant = "irrelevant",
         undo_irrelevant = "unset",
     }) do
+        -- expr mapping: `.` replays the returned `g@l`, and so the action.
         map(action, function()
-            require("taskbuffer.keymaps").global_action(verb)
-        end)
+            return require("taskbuffer.dotrepeat").arm(function()
+                require("taskbuffer.keymaps").global_action(verb)
+            end)
+        end, { expr = true })
     end
     local group = vim.api.nvim_create_augroup("TaskBufferKeymaps", { clear = true })
     vim.api.nvim_create_autocmd("FileType", {

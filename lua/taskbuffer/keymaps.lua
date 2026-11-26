@@ -428,19 +428,18 @@ function M.attach_taskfile()
     map("n", "taskfile", "go_to_file", go_to_file, { buffer = true, desc = "Go to task source" })
     vim.keymap.set("n", "<CR>", go_to_file, { buffer = true, desc = "Go to task source" })
 
-    map("n", "taskfile", "irrelevant", function()
-        local filepath, linenumber = get_task_location_from_taskfile()
-        if filepath then
-            util.run_task_cmd({ "irrelevant", filepath, tostring(linenumber) }, true)
+    local dotrepeat = require("taskbuffer.dotrepeat")
+    for action, verb in pairs({ irrelevant = "irrelevant", undo_irrelevant = "unset" }) do
+        local lhs = binding("taskfile", action)
+        if lhs then
+            dotrepeat.map(lhs, function()
+                local filepath, linenumber = get_task_location_from_taskfile()
+                if filepath then
+                    util.run_task_cmd({ verb, filepath, tostring(linenumber) }, true)
+                end
+            end, { buffer = true })
         end
-    end, { buffer = true })
-
-    map("n", "taskfile", "undo_irrelevant", function()
-        local filepath, linenumber = get_task_location_from_taskfile()
-        if filepath then
-            util.run_task_cmd({ "unset", filepath, tostring(linenumber) }, true)
-        end
-    end, { buffer = true })
+    end
 
     map("n", "taskfile", "filter_tags", function()
         require("taskbuffer.tags").pick_tags()
