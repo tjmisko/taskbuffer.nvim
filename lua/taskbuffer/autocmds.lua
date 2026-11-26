@@ -23,6 +23,17 @@ function M.register()
         callback = discard_changes,
     })
 
+    -- Staged edits live only in memory until the writer lands them.
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+        group = augroup,
+        callback = function()
+            local writer = package.loaded["taskbuffer.writer"]
+            if writer then
+                writer.flush_sync()
+            end
+        end,
+    })
+
     -- Keep an existing index current without polling: reparse a saved note, and
     -- sweep for external changes when the editor regains focus.
     vim.api.nvim_create_autocmd("BufWritePost", {

@@ -25,6 +25,7 @@ local function missing_path()
 end
 
 local function read_raw(path)
+    require("taskbuffer.writer").flush_sync()
     local f = assert(io.open(path, "rb"))
     local data = f:read("*a")
     f:close()

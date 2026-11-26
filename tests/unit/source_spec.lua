@@ -28,7 +28,7 @@ describe("source write safety", function()
         vim.uv.fs_write = function()
             return nil, "injected disk full"
         end
-        local succeeded, ok, err = pcall(source.write, path, "replacement\n")
+        local succeeded, ok, err = pcall(source.write_now, path, "replacement\n")
         vim.uv.fs_write = original
         assert.is_true(succeeded)
         assert.is_false(ok)
@@ -38,7 +38,7 @@ describe("source write safety", function()
     end)
 
     it("does not leave old bytes when replacing a source with shorter content", function()
-        assert.is_true(source.write(path, "x\n"))
+        assert.is_true(source.write_now(path, "x\n"))
         assert.are.equal("x\n", read())
     end)
 
@@ -47,7 +47,7 @@ describe("source write safety", function()
         vim.uv.fs_fchmod = function()
             return nil, "injected chmod failure"
         end
-        local succeeded, ok, err = pcall(source.write, path, "replacement\n")
+        local succeeded, ok, err = pcall(source.write_now, path, "replacement\n")
         vim.uv.fs_fchmod = original
         assert.is_true(succeeded)
         assert.is_false(ok)
@@ -89,7 +89,7 @@ describe("source write safety", function()
         if not set_attr(path) then
             return pending("filesystem rejects user xattrs")
         end
-        assert.is_true(source.write(path, "replacement\n"))
+        assert.is_true(source.write_now(path, "replacement\n"))
         assert.are.equal("kept\n", get_attr(path))
         assert.are.equal(1, xattr.copy_user(path, probe))
         assert.are.equal("kept\n", get_attr(probe))
@@ -116,7 +116,7 @@ describe("source write safety", function()
         end
         vim.system, vim.fn.system, vim.fn.jobstart, vim.uv.spawn = count, count, count, count
         assert(vim.uv.fs_chmod(path, 384)) -- 0600 forces the metadata path
-        local ok, result = pcall(source.write, path, "replacement\n")
+        local ok, result = pcall(source.write_now, path, "replacement\n")
         vim.system, vim.fn.system, vim.fn.jobstart, vim.uv.spawn =
             saved.system, saved.fn_system, saved.jobstart, saved.spawn
         assert.is_true(ok)
@@ -127,14 +127,14 @@ describe("source write safety", function()
 
     it("should keep mode bits when rewriting a 0600 note", function()
         assert(vim.uv.fs_chmod(path, 384)) -- 0600
-        assert.is_true(source.write(path, "replacement\n"))
+        assert.is_true(source.write_now(path, "replacement\n"))
         assert.are.equal(384, vim.uv.fs_stat(path).mode % 512)
         assert.are.equal("replacement\n", read())
     end)
 
     it("preserves permissions when replacing a source", function()
         assert(vim.uv.fs_chmod(path, 416)) -- 0640
-        assert.is_true(source.write(path, "replacement\n"))
+        assert.is_true(source.write_now(path, "replacement\n"))
         assert.are.equal(416, vim.uv.fs_stat(path).mode % 512)
         assert.are.equal("replacement\n", read())
     end)
@@ -142,7 +142,7 @@ describe("source write safety", function()
     it("should rewrite the symlink target and leave the link in place", function()
         local link = dir .. "/link.md"
         assert(vim.uv.fs_symlink(path, link))
-        assert.is_true(source.write(link, "replacement\n"))
+        assert.is_true(source.write_now(link, "replacement\n"))
         assert.are.equal("link", vim.uv.fs_lstat(link).type)
         assert.are.equal("replacement\n", read())
     end)

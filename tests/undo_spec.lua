@@ -40,7 +40,8 @@ describe("undo", function()
         })
 
         -- Stub out buffer refresh to avoid errors in headless mode
-        package.loaded["taskbuffer.buffer"] = { refresh_and_restore_cursor = function() end }
+        package.loaded["taskbuffer.buffer"] =
+            { refresh_and_restore_cursor = function() end, apply_local_change = function() end }
 
         -- Undo should revert the file
         undo.undo()
@@ -67,7 +68,8 @@ describe("undo", function()
             timestamp = os.time(),
         })
 
-        package.loaded["taskbuffer.buffer"] = { refresh_and_restore_cursor = function() end }
+        package.loaded["taskbuffer.buffer"] =
+            { refresh_and_restore_cursor = function() end, apply_local_change = function() end }
 
         -- Undo
         undo.undo()
@@ -81,7 +83,8 @@ describe("undo", function()
     end)
 
     it("should drop oldest entry when stack overflows", function()
-        package.loaded["taskbuffer.buffer"] = { refresh_and_restore_cursor = function() end }
+        package.loaded["taskbuffer.buffer"] =
+            { refresh_and_restore_cursor = function() end, apply_local_change = function() end }
 
         local path = temp_file({ "- [ ] Overflow test" })
 
@@ -127,7 +130,8 @@ describe("undo", function()
         -- Externally modify the file (simulating another process)
         util.replace_line_in_file(path, 1, "- [x] EXTERNALLY MODIFIED")
 
-        package.loaded["taskbuffer.buffer"] = { refresh_and_restore_cursor = function() end }
+        package.loaded["taskbuffer.buffer"] =
+            { refresh_and_restore_cursor = function() end, apply_local_change = function() end }
 
         -- Undo should refuse (file no longer matches new_line)
         undo.undo()
@@ -151,7 +155,8 @@ describe("undo", function()
             timestamp = os.time(),
         })
 
-        package.loaded["taskbuffer.buffer"] = { refresh_and_restore_cursor = function() end }
+        package.loaded["taskbuffer.buffer"] =
+            { refresh_and_restore_cursor = function() end, apply_local_change = function() end }
 
         -- Undo to populate redo stack
         undo.undo()

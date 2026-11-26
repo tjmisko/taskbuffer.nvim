@@ -491,7 +491,7 @@ function M.run_task_cmd(args, refresh)
             timestamp = os.time(),
         })
     end
-    require("taskbuffer.buffer").refresh_and_restore_cursor()
+    require("taskbuffer.buffer").apply_local_change()
     return true
 end
 

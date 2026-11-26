@@ -35,6 +35,7 @@ The plugin is pure Lua. The pipeline runs in-process — no Go binary, no subpro
 - **`horizon.lua`** — Horizon specs, resolution, and default horizons
 - **`strftime.lua`** — Strftime-to-Lua-pattern format and regex conversion
 - **`frontmatter.lua`** — YAML frontmatter parsing for tags/due dates/status
+- **`writer.lua`** — Background persistence of list-originated edits staged in `source.overlay` (async uv writes, rebase on conflict, revert on failure, `flush_sync`)
 - **`mutate.lua`** — File mutation (append to line, check off task)
 - **`state.lua`** — Current task state (start/stop/complete tracking)
 - **`context.lua`** — Builds the shared context (config + runtime) for the pipeline

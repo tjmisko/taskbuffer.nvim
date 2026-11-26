@@ -103,7 +103,7 @@ function M.undo()
     redo_stack[#redo_stack + 1] = entry
 
     local buf = vim.api.nvim_get_current_buf()
-    require("taskbuffer.buffer").refresh_and_restore_cursor(function(err)
+    require("taskbuffer.buffer").apply_local_change(function(err)
         if not err and vim.api.nvim_get_current_buf() == buf then
             flash_edits(entry.edits)
         end
@@ -149,12 +149,47 @@ function M.redo()
     undo_stack[#undo_stack + 1] = entry
 
     local buf = vim.api.nvim_get_current_buf()
-    require("taskbuffer.buffer").refresh_and_restore_cursor(function(err)
+    require("taskbuffer.buffer").apply_local_change(function(err)
         if not err and vim.api.nvim_get_current_buf() == buf then
             flash_edits(entry.edits)
         end
     end)
     vim.notify("[taskbuffer] redid: " .. entry.op .. " (" .. task_count(#entry.edits) .. ")", vim.log.levels.INFO)
+end
+
+--- Forget one edit whose write was reverted; the entry goes when it empties.
+---@param path string canonical path of the file
+---@param record table writer record { old_lines, new_lines }
+function M.drop_edit(path, record)
+    local source = require("taskbuffer.source")
+    local old_line, new_line = record.old_lines[1], record.new_lines[1]
+    local function drop_from(stack)
+        for position = #stack, 1, -1 do
+            local entry = stack[position]
+            for index = #entry.edits, 1, -1 do
+                local edit = entry.edits[index]
+                local forward = edit.old_line == old_line and edit.new_line == new_line
+                local backward = edit.old_line == new_line and edit.new_line == old_line
+                if (forward or backward) and source.canonical(edit.filepath) == path then
+                    table.remove(entry.edits, index)
+                    if #entry.edits == 0 then
+                        table.remove(stack, position)
+                    end
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    if not drop_from(undo_stack) then
+        drop_from(redo_stack)
+    end
+end
+
+---@return integer undo_entries
+---@return integer redo_entries
+function M.depth()
+    return #undo_stack, #redo_stack
 end
 
 function M.reset()

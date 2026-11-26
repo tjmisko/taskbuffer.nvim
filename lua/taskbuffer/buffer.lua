@@ -216,6 +216,36 @@ function M.selection_is_current(snapshot)
     return snapshot ~= nil and snapshot == published[buf] and snapshot.tick == vim.api.nvim_buf_get_changedtick(buf)
 end
 
+-- An action changed the index. Render it now, in the keypress, so a typed-ahead
+-- key sees the new rows. The cursor follows its task if it is still listed;
+-- otherwise it keeps its row number (clamped), which lands on the next task.
+function M.apply_local_change(callback)
+    local buf = vim.api.nvim_get_current_buf()
+    if vim.bo[buf].filetype ~= "taskfile" then
+        if callback then
+            callback(nil)
+        end
+        return
+    end
+    -- A refresh already in flight would publish rows from before this change.
+    local superseded = active ~= nil
+    M.cancel_refresh()
+    local view, err, data = require("taskbuffer.list").view_sync(list_opts(true))
+    local ok, failure = true, err
+    if not err then
+        ok, failure = pcall(publish, buf, view, data)
+        failure = not ok and failure or nil
+    end
+    if failure then
+        vim.notify("[taskbuffer] task list failed: " .. tostring(failure), vim.log.levels.ERROR)
+    elseif superseded then
+        M.refresh_taskfile_async(nil, { buf = buf })
+    end
+    if callback then
+        callback(failure)
+    end
+end
+
 function M.validate_source(path, lnum)
     local snapshot = published[vim.api.nvim_get_current_buf()]
     local annotations = snapshot and snapshot.data and snapshot.data.annotations
@@ -223,19 +253,13 @@ function M.validate_source(path, lnum)
         vim.notify("[taskbuffer] edit the code annotation in its source (Enter or gf)", vim.log.levels.WARN)
         return false
     end
-    local expected = snapshot and snapshot.data and snapshot.data.versions and snapshot.data.versions[path]
-    local version = require("taskbuffer.source").version(path)
+    local known = snapshot and snapshot.data and snapshot.data.versions and snapshot.data.versions[path]
     local originals = snapshot and snapshot.data and snapshot.data.originals
     local original = originals and originals[path] and originals[path][lnum]
+    -- The row must still describe the source line, as the user would see it:
+    -- the overlay already holds our own unsaved edits.
     local line_changed = original and require("taskbuffer.util").read_line_from_file(path, lnum) ~= original
-    if
-        refreshing
-        or (snapshot and snapshot.tick ~= vim.api.nvim_buf_get_changedtick(0))
-        or not expected
-        or not version
-        or line_changed
-        or expected ~= version
-    then
+    if not snapshot or snapshot.tick ~= vim.api.nvim_buf_get_changedtick(0) or not known or line_changed then
         vim.notify(
             "[taskbuffer] task list is loading or stale; run :Tasks and retry after it refreshes",
             vim.log.levels.WARN
@@ -399,6 +423,7 @@ function M.tasks_clear()
 end
 
 M.refresh_taskfile = profile.wrap("refresh.sync", M.refresh_taskfile)
+M.apply_local_change = profile.wrap("action.publish", M.apply_local_change)
 M.refresh_and_restore_cursor = profile.wrap("refresh.request", M.refresh_and_restore_cursor)
 M.tasks = profile.wrap("tasks.command", M.tasks)
 M.tasks_clear = profile.wrap("tasks_clear.command", M.tasks_clear)

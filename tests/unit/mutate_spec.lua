@@ -22,6 +22,7 @@ end
 
 -- Read the whole file back as raw bytes.
 local function read_raw(path)
+    require("taskbuffer.writer").flush_sync()
     local f = assert(io.open(path, "rb"))
     local data = f:read("*a")
     f:close()

@@ -115,7 +115,7 @@ local function shift_task_dates_bulk(tasks, days)
     local direction = days > 0 and "forward" or "back"
     local op = "shift " .. direction .. " " .. math.abs(days) .. " day(s)"
     require("taskbuffer.undo").push({ op = op, edits = all_edits, timestamp = os.time() })
-    buffer.refresh_and_restore_cursor()
+    buffer.apply_local_change()
     vim.notify(
         "[taskbuffer] shifted " .. shifted .. " task(s) " .. direction .. " " .. math.abs(days) .. " day(s)",
         vim.log.levels.INFO
@@ -157,7 +157,7 @@ local function shift_task_date_in_taskfile(days)
             edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
             timestamp = os.time(),
         })
-        buffer.refresh_and_restore_cursor()
+        buffer.apply_local_change()
         vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
         return
     end
@@ -176,7 +176,7 @@ local function shift_task_date_in_taskfile(days)
                 },
                 timestamp = os.time(),
             })
-            buffer.refresh_and_restore_cursor()
+            buffer.apply_local_change()
             vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
             return
         end
@@ -247,7 +247,7 @@ local function set_task_dates_today_bulk(tasks)
     end
     -- FM edits were already applied in set_frontmatter_due_today
     require("taskbuffer.undo").push({ op = "set today", edits = all_edits, timestamp = os.time() })
-    buffer.refresh_and_restore_cursor()
+    buffer.apply_local_change()
     vim.notify("[taskbuffer] set " .. updated .. " task(s) to today", vim.log.levels.INFO)
 end
 
@@ -273,7 +273,7 @@ local function set_date_today_in_taskfile()
             edits = { { filepath = filepath, linenumber = linenumber, old_line = source_line, new_line = new_line } },
             timestamp = os.time(),
         })
-        buffer.refresh_and_restore_cursor()
+        buffer.apply_local_change()
         vim.notify("[taskbuffer] due: " .. new_date, vim.log.levels.INFO)
         return
     end
@@ -290,7 +290,7 @@ local function set_date_today_in_taskfile()
                 },
                 timestamp = os.time(),
             })
-            buffer.refresh_and_restore_cursor()
+            buffer.apply_local_change()
             vim.notify("[taskbuffer] FM due: " .. fm_new_date, vim.log.levels.INFO)
             return
         end
@@ -411,7 +411,7 @@ function M.attach_taskfile()
             vim.notify("[taskbuffer] " .. tostring(err), vim.log.levels.ERROR)
             return
         end
-        require("taskbuffer.buffer").refresh_and_restore_cursor()
+        require("taskbuffer.buffer").apply_local_change()
     end, { buffer = true, desc = "Start task" })
 
     local function go_to_file()

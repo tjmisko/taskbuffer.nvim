@@ -124,6 +124,24 @@ function M.view_async(opts, cb)
     return M.list_async(vim.tbl_extend("force", opts or {}, { view = true }), cb)
 end
 
+-- Synchronous render of the current index for an action that just changed it.
+-- Never sweeps unless no index exists yet. Returns view, err, data.
+function M.view_sync(opts)
+    opts = vim.tbl_extend("force", opts or {}, { view = true })
+    local ctx = new_context(opts)
+    local data, err
+    if index.is_ready() then
+        data = index.current()
+    else
+        data, err = index.refresh_sync(ctx)
+    end
+    if err then
+        return nil, err
+    end
+    local view, render_err = render(ctx, data, true)
+    return view, render_err, data
+end
+
 function M.tags_async(opts, cb)
     local span = profile.begin("tags.async.wall")
     local ctx = new_context(opts)

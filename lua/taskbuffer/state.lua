@@ -95,7 +95,7 @@ function M.write_current_task(state_dir, ct)
         return false, tostring(err)
     end
     local line = string.format("%d\t%s\t%s\t%d\n", ct.start_time, ct.name, ct.filepath, ct.linenumber)
-    return require("taskbuffer.source").write(M.state_path(state_dir), line)
+    return require("taskbuffer.source").write_now(M.state_path(state_dir), line)
 end
 
 -- ClearCurrentTaskFrom (state.go:91). Remove the file; missing -> ok (no error).

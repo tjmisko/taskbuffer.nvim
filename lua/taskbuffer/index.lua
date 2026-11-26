@@ -205,6 +205,9 @@ local function refresh(st)
                 bump(st)
             end
             seen[path] = nil
+        elseif source.overlay[path] then
+            -- Our own unsaved edit is newer than the disk; the writer settles it.
+            seen[path] = true
         elseif not existing or existing.version ~= version then
             local data = read_file(path)
             st.files[path] = data and M.parse_file(path, data, st.ctx, version) or empty_entry(version)
@@ -269,6 +272,16 @@ function M.update_file(path, data, version)
     return true
 end
 
+--- Record that the file on disk now has this version without reparsing it.
+---@param path string
+---@param version string
+function M.set_version(path, version)
+    local entry = state and state.files[canonical(path)]
+    if entry then
+        entry.version = version
+    end
+end
+
 --- Reread one file from disk (BufWritePost) and reparse it.
 ---@param path string
 ---@return boolean
@@ -277,6 +290,9 @@ function M.update_file_from_disk(path)
         return false
     end
     path = canonical(path)
+    if source.overlay[path] then
+        return false
+    end
     local version = source.version(path)
     local data = version and read_file(path) or nil
     return M.update_file(path, data, version)
