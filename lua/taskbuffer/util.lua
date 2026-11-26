@@ -478,9 +478,20 @@ function M.run_task_cmd(args, refresh)
         vim.notify("[taskbuffer] task command failed: " .. tostring(err), vim.log.levels.ERROR)
         return false
     end
-    if refresh then
-        require("taskbuffer.buffer").refresh_and_restore_cursor()
+    if not refresh then
+        -- A source buffer edit is already one native undo step.
+        return true
     end
+    -- From the task list, record the source line so the list's `u` reverts it.
+    local new_line = M.read_line_from_file(args[2], tonumber(args[3]))
+    if new_line and new_line ~= line then
+        require("taskbuffer.undo").push({
+            op = args[1],
+            edits = { { filepath = args[2], linenumber = tonumber(args[3]), old_line = line, new_line = new_line } },
+            timestamp = os.time(),
+        })
+    end
+    require("taskbuffer.buffer").refresh_and_restore_cursor()
     return true
 end
 
