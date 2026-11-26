@@ -124,15 +124,9 @@ end
 -- Reads ONLY the head (stops at the closing ---). Returns a Frontmatter table
 -- { fields = <top-level map>, tags = <string[]>, lines = <key->1-based line> }
 -- or nil when there is no usable frontmatter.
-local function parse_head(path)
-    local f = io.open(path, "r")
-    if not f then
-        return nil -- Go returns err; we treat unreadable as no-FM.
-    end
-
-    local first = f:read("*l")
+local function parse_head_lines(next_line)
+    local first = next_line()
     if first == nil or trim(first) ~= "---" then
-        f:close()
         return nil -- no frontmatter (frontmatter.go:132)
     end
 
@@ -143,7 +137,7 @@ local function parse_head(path)
     local ln = 1 -- opening --- consumed
 
     while true do
-        local line = f:read("*l")
+        local line = next_line()
         if line == nil then
             break -- EOF before closing --- → treat collected body as the FM
         end
@@ -169,7 +163,6 @@ local function parse_head(path)
         end
         -- blank line: ignore, leave any pending block-list armed
     end
-    f:close()
 
     if not any then
         return nil -- empty FM (frontmatter.go:148)
@@ -183,6 +176,38 @@ local function parse_head(path)
     end
 
     return { fields = fields, tags = tags, lines = lines }
+end
+
+local function parse_head(path)
+    local f = io.open(path, "r")
+    if not f then
+        return nil -- Go returns err; we treat unreadable as no-FM.
+    end
+    local fm = parse_head_lines(function()
+        return f:read("*l")
+    end)
+    f:close()
+    return fm
+end
+
+-- Iterate the lines of an in-memory string the way file:read("*l") would.
+local function string_lines(data)
+    local position = 1
+    return function()
+        if position > #data then
+            return nil
+        end
+        local newline = data:find("\n", position, true)
+        local line
+        if newline then
+            line = data:sub(position, newline - 1)
+            position = newline + 1
+        else
+            line = data:sub(position)
+            position = #data + 1
+        end
+        return line
+    end
 end
 
 -- ── cache / lifecycle (parity: frontmatter.go:81-120) ─────────────────────────
@@ -205,6 +230,19 @@ end
 -- Blueprint-03 alias (Scan/CONTEXT references frontmatter.read).
 M.read = M.parse_frontmatter
 
+--- Parse frontmatter from already-read file contents and seed the per-refresh
+--- cache so the merge/filter/project operations never reread the file.
+---@param path string
+---@param data string
+---@return table|nil fm
+function M.parse_frontmatter_data(path, data)
+    local fm = parse_head_lines(string_lines(data))
+    local job = async.context()
+    local entries = job and job.frontmatter_cache or cache
+    entries[path] = fm or false
+    return fm
+end
+
 --- Clear the whole cache. Called once at the START of every refresh
 --- (== ResetFrontmatterCache). Integration relies on this for fresh reads.
 function M.reset()
@@ -220,6 +258,10 @@ end
 ---@param path string
 function M.invalidate(path)
     cache[path] = nil
+    local job = async.context()
+    if job and job.frontmatter_cache then
+        job.frontmatter_cache[path] = nil
+    end
 end
 
 -- ── key accessors (parity: GetString :24, GetStringSlice :52) ─────────────────
