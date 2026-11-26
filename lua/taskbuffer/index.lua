@@ -190,7 +190,7 @@ local function refresh(st)
         return err
     end
     st.roots = roots
-    local seen, changed = {}, false
+    local seen = {}
     for _, path in ipairs(files) do
         async.checkpoint()
         if state ~= st then
@@ -202,23 +202,20 @@ local function refresh(st)
         if not version then
             if existing then
                 st.files[path] = nil
-                changed = true
+                bump(st)
             end
             seen[path] = nil
         elseif not existing or existing.version ~= version then
             local data = read_file(path)
             st.files[path] = data and M.parse_file(path, data, st.ctx, version) or empty_entry(version)
-            changed = true
+            bump(st)
         end
     end
     for path in pairs(st.files) do
         if not seen[path] then
             st.files[path] = nil
-            changed = true
+            bump(st)
         end
-    end
-    if changed then
-        bump(st)
     end
     st.ready = true
     return nil

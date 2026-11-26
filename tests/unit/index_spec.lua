@@ -294,6 +294,27 @@ describe("index maintenance", function()
         assert.are.equal(index.RESET_ERROR, err)
     end)
 
+    it("should return the edited content when a sweep is cancelled after reparsing a changed file", function()
+        for i = 1, 3000 do
+            write(string.format("n%04d.md", i), { "- [ ] Task " .. i })
+        end
+        local ctx = context.build_context(config.values, { now = now })
+        local before = index.refresh_sync(ctx)
+        assert.is_truthy(before)
+        local edited = write("n0001.md", { "- [ ] Edited one" })
+        bump_mtime(edited)
+        local cancel = index.refresh_async(ctx, function() end)
+        local reparsed = vim.wait(5000, function()
+            local entry = index.entry(edited)
+            return entry and entry.all[1] and entry.all[1].body:find("Edited", 1, true) ~= nil
+        end, 1)
+        cancel()
+        assert.is_true(reparsed)
+        local after = index.refresh_sync(ctx)
+        assert.are_not.equal(before, after)
+        assert.are.equal("Edited one", index.entry(edited).all[1].body)
+    end)
+
     it("should accept paths below a source and reject hidden, excluded, and outside paths", function()
         write("a.md", { "- [ ] Alpha" })
         refresh()
